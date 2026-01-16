@@ -28,8 +28,8 @@ impl Default for Config {
     fn default() -> Self {
         Self {
             sleep_threshold: 5.0,
-            max_fps: 10.0,
-            min_fps: 1.0,
+            max_fps: 15.0,  // Faster max animation
+            min_fps: 2.0,   // Faster min animation
             show_percentage: true,
         }
     }
@@ -68,16 +68,17 @@ impl Config {
     }
 
     /// Calculate animation FPS based on CPU usage percentage
+    /// Cat always moves at least at min_fps, speeds up with CPU usage
     pub fn calculate_fps(&self, cpu_percent: f32) -> f32 {
-        if cpu_percent < self.sleep_threshold {
-            0.0 // Cat is sleeping
-        } else {
-            // Linear interpolation between min_fps and max_fps
-            // based on CPU percentage (threshold to 100%)
-            let range = 100.0 - self.sleep_threshold;
-            let normalized = (cpu_percent - self.sleep_threshold) / range;
-            self.min_fps + normalized * (self.max_fps - self.min_fps)
-        }
+        // Linear interpolation between min_fps and max_fps
+        // based on CPU percentage (0 to 100%)
+        let normalized = (cpu_percent / 100.0).clamp(0.0, 1.0);
+        self.min_fps + normalized * (self.max_fps - self.min_fps)
+    }
+
+    /// Check if the cat should be sleeping (CPU below threshold)
+    pub fn should_sleep(&self, cpu_percent: f32) -> bool {
+        cpu_percent < self.sleep_threshold
     }
 }
 

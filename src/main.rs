@@ -14,6 +14,7 @@ mod config;
 mod cpu;
 mod daemon;
 mod dbus_client;
+mod settings;
 mod tray;
 
 use std::env;
@@ -38,8 +39,7 @@ fn print_version() {
     println!("cosmic-runkat {}", env!("CARGO_PKG_VERSION"));
 }
 
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = env::args().collect();
 
     // Parse command line arguments
@@ -47,25 +47,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         match args[1].as_str() {
             "-h" | "--help" => {
                 print_help();
-                return Ok(());
+                Ok(())
             }
             "-v" | "--version" => {
                 print_version();
-                return Ok(());
+                Ok(())
             }
             "-d" | "--daemon" => {
                 println!("Starting cosmic-runkat daemon...");
-                daemon::run_daemon().await?;
-                return Ok(());
+                // Run daemon with tokio runtime
+                tokio::runtime::Builder::new_multi_thread()
+                    .enable_all()
+                    .build()?
+                    .block_on(daemon::run_daemon())?;
+                Ok(())
             }
             "-t" | "--tray" => {
                 println!("Starting cosmic-runkat tray...");
                 tray::run_tray().map_err(|e| e.into())
             }
             "-s" | "--settings" => {
-                println!("Opening settings (not yet implemented)...");
-                // TODO: Implement settings app
-                Ok(())
+                // Settings uses libcosmic which has its own runtime
+                settings::run_settings().map_err(|e| e.into())
             }
             arg => {
                 eprintln!("Unknown argument: {}", arg);
