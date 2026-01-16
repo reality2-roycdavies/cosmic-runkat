@@ -186,6 +186,30 @@ AI-assisted development is genuinely collaborative - neither party has complete 
 
 ---
 
+## Important Caveat
+
+It should be noted that cosmic-runkat is a **small, self-contained application** that runs entirely on the desktop without external dependencies or backend services. The ~3 hour development time reflects this scope:
+
+- No network APIs or authentication
+- No database or complex state management
+- No multi-user considerations
+- Single-purpose functionality (CPU monitoring + tray display)
+- Leveraged existing crates for heavy lifting (systemstat, ksni, libcosmic)
+
+This makes it an ideal candidate for AI-assisted development. **The findings and timeline should not be extrapolated to larger, more complex projects.** Applications involving distributed systems, security-sensitive operations, complex business logic, or team coordination would likely present very different challenges and patterns.
+
+For more complex projects, we might expect:
+- More extensive upfront architecture discussions
+- Greater need for human expertise in domain-specific areas
+- Security reviews that require human judgment
+- Integration challenges with existing systems
+- Performance optimization requiring profiling and measurement
+- Team coordination and code review processes
+
+The value of documenting this small project lies in showing what AI-assisted development looks like at this scale, not in claiming it would work identically for all software development.
+
+---
+
 ## Conclusions
 
 ### What Worked Well
