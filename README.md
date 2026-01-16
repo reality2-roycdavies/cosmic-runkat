@@ -29,10 +29,6 @@ The development process, including all conversations and design decisions, has b
 - **Instant Updates**: Uses inotify file watching for immediate theme/config changes
 - **Settings App**: libcosmic-based settings window for configuration
 
-## Screenshots
-
-*The cat runs faster as CPU usage increases, and sleeps when idle.*
-
 ## Installation
 
 ### Build from Source
