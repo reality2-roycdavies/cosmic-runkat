@@ -39,6 +39,6 @@ modules:
     sources:
       - type: git
         url: https://github.com/reality2-roycdavies/cosmic-runkat.git
-        tag: v0.2.0
-      # Cargo sources will be generated with flatpak-cargo-generator
-      - cargo-sources.json
+        tag: v0.2.1
+      - type: file
+        path: cargo-sources.json
