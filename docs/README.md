@@ -4,7 +4,7 @@ This directory contains documentation about the development process of cosmic-ru
 
 ## About This Project
 
-cosmic-runkat was developed collaboratively between **Dr. Roy C. Davies** and **Claude** (Anthropic's AI assistant) using [Claude Code](https://claude.ai/claude-code). The entire application—from initial concept to working code—was built through natural language conversation.
+cosmic-runkat was developed collaboratively between **Dr. Roy C. Davies** and **Claude** (Anthropic's AI assistant) using [Claude Code](https://claude.ai/claude-code). The entire application—from initial concept to working, documented release—was built through natural language conversation in approximately **3 hours**.
 
 This is the second project developed using this approach, following [cosmic-bing-wallpaper](https://github.com/reality2-roycdavies/cosmic-bing-wallpaper). Both projects serve as case studies in human-AI collaboration for software development.
 
