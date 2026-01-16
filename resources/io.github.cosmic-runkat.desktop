@@ -1,0 +1,13 @@
+[Desktop Entry]
+Name=RunKat
+Comment=A cute running cat CPU indicator for COSMIC desktop
+GenericName=CPU Monitor
+Exec=cosmic-runkat --tray
+Icon=io.github.cosmic-runkat
+Terminal=false
+Type=Application
+Categories=System;Monitor;
+Keywords=cpu;monitor;cat;runkat;system;tray;cosmic;
+StartupNotify=false
+OnlyShowIn=COSMIC;
+X-Flatpak-Tags=Utility;

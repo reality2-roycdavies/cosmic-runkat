@@ -38,6 +38,7 @@ fi
 BIN_DIR="$PREFIX/bin"
 SHARE_DIR="$PREFIX/share"
 APPLICATIONS_DIR="$SHARE_DIR/applications"
+ICONS_DIR="$SHARE_DIR/icons/hicolor"
 AUTOSTART_DIR="$HOME/.config/autostart"
 
 # Handle uninstall
@@ -50,6 +51,13 @@ if [[ "${1:-}" == "--uninstall" ]] || [[ "${1:-}" == "-u" ]]; then
     rm -f "$BIN_DIR/$APP_NAME"
     rm -f "$APPLICATIONS_DIR/$APP_ID.desktop"
     rm -f "$AUTOSTART_DIR/$APP_ID-tray.desktop"
+    rm -f "$ICONS_DIR/scalable/apps/$APP_ID.svg"
+    rm -f "$ICONS_DIR/symbolic/apps/$APP_ID-symbolic.svg"
+
+    # Update icon cache
+    if command -v gtk-update-icon-cache &> /dev/null; then
+        gtk-update-icon-cache -f -t "$ICONS_DIR" 2>/dev/null || true
+    fi
 
     # Update desktop database
     if command -v update-desktop-database &> /dev/null; then
@@ -80,6 +88,8 @@ echo ""
 echo "=== Installing files ==="
 mkdir -p "$BIN_DIR"
 mkdir -p "$APPLICATIONS_DIR"
+mkdir -p "$ICONS_DIR/scalable/apps"
+mkdir -p "$ICONS_DIR/symbolic/apps"
 mkdir -p "$AUTOSTART_DIR"
 
 # Install binary (remove old first to avoid permission issues)
@@ -88,20 +98,35 @@ rm -f "$BIN_DIR/$APP_NAME"
 cp "$SCRIPT_DIR/target/release/$APP_NAME" "$BIN_DIR/"
 chmod +x "$BIN_DIR/$APP_NAME"
 
+# Install icons
+echo "Installing icons..."
+if [[ -f "$SCRIPT_DIR/resources/$APP_ID.svg" ]]; then
+    cp "$SCRIPT_DIR/resources/$APP_ID.svg" "$ICONS_DIR/scalable/apps/"
+fi
+if [[ -f "$SCRIPT_DIR/resources/$APP_ID-symbolic.svg" ]]; then
+    cp "$SCRIPT_DIR/resources/$APP_ID-symbolic.svg" "$ICONS_DIR/symbolic/apps/"
+fi
+
+# Update icon cache
+if command -v gtk-update-icon-cache &> /dev/null; then
+    gtk-update-icon-cache -f -t "$ICONS_DIR" 2>/dev/null || true
+fi
+
 # Install desktop file for settings app
 echo "Installing desktop entry..."
 cat > "$APPLICATIONS_DIR/$APP_ID.desktop" << EOF
 [Desktop Entry]
 Name=RunKat Settings
-Comment=Configure the running cat CPU indicator
+Comment=Configure the running cat CPU indicator for COSMIC desktop
 GenericName=CPU Monitor Settings
 Exec=$BIN_DIR/$APP_NAME --settings
-Icon=preferences-system
+Icon=$APP_ID
 Terminal=false
 Type=Application
 Categories=Settings;System;
-Keywords=cpu;monitor;cat;runkat;settings;
+Keywords=cpu;monitor;cat;runkat;settings;cosmic;
 StartupNotify=true
+OnlyShowIn=COSMIC;
 EOF
 
 # Install autostart entry for tray
@@ -109,13 +134,15 @@ echo "Installing autostart entry..."
 cat > "$AUTOSTART_DIR/$APP_ID-tray.desktop" << EOF
 [Desktop Entry]
 Name=RunKat Tray
-Comment=Running cat CPU indicator
+Comment=Running cat CPU indicator for COSMIC desktop
 Exec=$BIN_DIR/$APP_NAME --tray
-Icon=utilities-system-monitor
+Icon=$APP_ID
 Terminal=false
 Type=Application
 Categories=System;Monitor;
+Keywords=cpu;monitor;cat;runkat;cosmic;
 X-GNOME-Autostart-enabled=true
+OnlyShowIn=COSMIC;
 EOF
 
 # Update desktop database

@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <!-- Background circle -->
+  <circle cx="32" cy="32" r="30" fill="#3584e4"/>
+
+  <!-- Running cat silhouette - white on blue -->
+  <g fill="#ffffff" transform="translate(8, 16)">
+    <!-- Body -->
+    <rect x="12" y="12" width="20" height="10" rx="2"/>
+
+    <!-- Head -->
+    <rect x="28" y="6" width="12" height="10" rx="2"/>
+
+    <!-- Ears -->
+    <polygon points="30,6 32,0 34,6"/>
+    <polygon points="36,6 38,0 40,6"/>
+
+    <!-- Tail - curved up -->
+    <path d="M12,14 Q4,14 6,6 Q8,2 12,4" stroke="#ffffff" stroke-width="3" fill="none" stroke-linecap="round"/>
+
+    <!-- Front leg extended -->
+    <rect x="26" y="22" width="4" height="10" rx="1"/>
+
+    <!-- Back leg extended back -->
+    <rect x="14" y="22" width="4" height="8" rx="1" transform="rotate(-20, 16, 22)"/>
+
+    <!-- Eye -->
+    <circle cx="36" cy="10" r="1.5" fill="#3584e4"/>
+  </g>
+</svg>

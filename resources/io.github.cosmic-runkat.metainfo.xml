@@ -1,0 +1,105 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.cosmic-runkat</id>
+  <name>RunKat</name>
+  <summary>A cute running cat CPU indicator for COSMIC desktop</summary>
+  <metadata_license>MIT</metadata_license>
+  <project_license>MIT</project_license>
+  <developer id="io.github.reality2-roycdavies">
+    <name>Roy C. Davies</name>
+  </developer>
+
+  <description>
+    <p>
+      NOTE: This application requires the COSMIC desktop environment and will
+      not function on other desktop environments.
+    </p>
+    <p>
+      RunKat displays an animated cat in your system tray that runs faster when
+      CPU usage is higher. When CPU usage drops below a configurable threshold,
+      the cat curls up and sleeps.
+    </p>
+    <p>Features:</p>
+    <ul>
+      <li>Animated running cat that reflects CPU usage</li>
+      <li>Optional CPU percentage display beside the cat</li>
+      <li>Sleep mode when CPU is idle</li>
+      <li>Automatic dark/light theme adaptation</li>
+      <li>Panel size awareness (percentage hidden on small panels)</li>
+      <li>Configurable sleep threshold</li>
+    </ul>
+    <p>
+      Inspired by RunCat, this application was built specifically for the
+      COSMIC desktop environment using libcosmic and Rust.
+    </p>
+  </description>
+
+  <requires>
+    <display_length compare="ge">360</display_length>
+  </requires>
+  <supports>
+    <control>pointing</control>
+    <control>keyboard</control>
+  </supports>
+
+  <url type="homepage">https://github.com/reality2-roycdavies/cosmic-runkat</url>
+  <url type="bugtracker">https://github.com/reality2-roycdavies/cosmic-runkat/issues</url>
+  <url type="vcs-browser">https://github.com/reality2-roycdavies/cosmic-runkat</url>
+
+  <launchable type="desktop-id">io.github.cosmic-runkat.desktop</launchable>
+
+  <provides>
+    <binary>cosmic-runkat</binary>
+  </provides>
+
+  <branding>
+    <color type="primary" scheme_preference="light">#f0f0f0</color>
+    <color type="primary" scheme_preference="dark">#303030</color>
+  </branding>
+
+  <content_rating type="oars-1.1" />
+
+  <releases>
+    <release version="0.2.0" date="2026-01-17">
+      <description>
+        <p>Flatpak packaging and distribution release:</p>
+        <ul>
+          <li>Added Flatpak manifest for Flathub distribution</li>
+          <li>Added proper application icon (SVG)</li>
+          <li>Improved install.sh with icon installation</li>
+          <li>Marked as COSMIC-only application</li>
+          <li>Added AppStream metadata</li>
+        </ul>
+      </description>
+    </release>
+    <release version="0.1.0" date="2026-01-17">
+      <description>
+        <p>Initial release featuring:</p>
+        <ul>
+          <li>Animated running cat in system tray</li>
+          <li>CPU-based animation speed</li>
+          <li>Sleep mode when CPU is below threshold</li>
+          <li>Optional CPU percentage display</li>
+          <li>Dark/light theme support</li>
+          <li>Panel size awareness</li>
+          <li>Settings app for configuration</li>
+        </ul>
+      </description>
+    </release>
+  </releases>
+
+  <categories>
+    <category>System</category>
+    <category>Monitor</category>
+  </categories>
+
+  <keywords>
+    <keyword>cpu</keyword>
+    <keyword>monitor</keyword>
+    <keyword>system</keyword>
+    <keyword>tray</keyword>
+    <keyword>cat</keyword>
+    <keyword>animation</keyword>
+    <keyword>cosmic</keyword>
+  </keywords>
+</component>
