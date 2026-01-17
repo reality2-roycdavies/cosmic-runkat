@@ -23,10 +23,12 @@ use std::io::{Read, Write};
 use std::process::Command;
 
 /// Get the path to the tray lockfile
+/// Uses config directory to work correctly in Flatpak sandboxes
 fn tray_lockfile_path() -> std::path::PathBuf {
-    dirs::runtime_dir()
+    dirs::config_dir()
+        .map(|d| d.join("cosmic-runkat"))
         .unwrap_or_else(|| std::path::PathBuf::from("/tmp"))
-        .join("cosmic-runkat-tray.lock")
+        .join("tray.lock")
 }
 
 fn print_help() {
@@ -77,6 +79,10 @@ fn is_tray_running() -> bool {
 /// Called at the start of tray mode
 pub fn create_tray_lockfile() {
     let lockfile = tray_lockfile_path();
+    // Ensure parent directory exists
+    if let Some(parent) = lockfile.parent() {
+        let _ = fs::create_dir_all(parent);
+    }
     if let Ok(mut file) = fs::File::create(&lockfile) {
         let _ = write!(file, "{}", std::process::id());
     }
