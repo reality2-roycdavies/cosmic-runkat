@@ -18,7 +18,16 @@ mod settings;
 mod tray;
 
 use std::env;
+use std::fs;
+use std::io::{Read, Write};
 use std::process::Command;
+
+/// Get the path to the tray lockfile
+fn tray_lockfile_path() -> std::path::PathBuf {
+    dirs::runtime_dir()
+        .unwrap_or_else(|| std::path::PathBuf::from("/tmp"))
+        .join("cosmic-runkat-tray.lock")
+}
 
 fn print_help() {
     println!(
@@ -42,26 +51,40 @@ fn print_version() {
     println!("cosmic-runkat {}", env!("CARGO_PKG_VERSION"));
 }
 
-/// Check if cosmic-runkat tray is already running
+/// Check if cosmic-runkat tray is already running using a lockfile
+/// This works reliably in Flatpak sandboxes where pgrep doesn't work
 fn is_tray_running() -> bool {
-    // Use pgrep to check for running tray process
-    if let Ok(output) = Command::new("pgrep")
-        .args(["-f", "cosmic-runkat.*--tray"])
-        .output()
-    {
-        if output.status.success() {
-            // Found at least one process, but exclude ourselves
-            let pids = String::from_utf8_lossy(&output.stdout);
-            let our_pid = std::process::id().to_string();
-            // Check if any PID other than ours is running
-            for pid in pids.lines() {
-                if pid.trim() != our_pid {
+    let lockfile = tray_lockfile_path();
+
+    // Check if lockfile exists and contains a valid PID
+    if let Ok(mut file) = fs::File::open(&lockfile) {
+        let mut contents = String::new();
+        if file.read_to_string(&mut contents).is_ok() {
+            if let Ok(pid) = contents.trim().parse::<u32>() {
+                // Check if the process is still running
+                // /proc/PID exists if process is alive
+                let proc_path = format!("/proc/{}", pid);
+                if std::path::Path::new(&proc_path).exists() {
                     return true;
                 }
             }
         }
     }
     false
+}
+
+/// Create a lockfile to indicate the tray is running
+/// Called at the start of tray mode
+pub fn create_tray_lockfile() {
+    let lockfile = tray_lockfile_path();
+    if let Ok(mut file) = fs::File::create(&lockfile) {
+        let _ = write!(file, "{}", std::process::id());
+    }
+}
+
+/// Remove the lockfile when tray exits
+pub fn remove_tray_lockfile() {
+    let _ = fs::remove_file(tray_lockfile_path());
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {

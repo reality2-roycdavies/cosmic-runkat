@@ -354,6 +354,9 @@ impl Tray for RunkatTray {
 
 /// Starts the system tray service with animated icon
 pub fn run_tray() -> Result<(), String> {
+    // Create lockfile to indicate tray is running
+    crate::create_tray_lockfile();
+
     let should_quit = Arc::new(AtomicBool::new(false));
     let (update_tx, update_rx) = channel();
 
@@ -515,5 +518,9 @@ pub fn run_tray() -> Result<(), String> {
     }
 
     handle.shutdown();
+
+    // Clean up lockfile on exit
+    crate::remove_tray_lockfile();
+
     Ok(())
 }

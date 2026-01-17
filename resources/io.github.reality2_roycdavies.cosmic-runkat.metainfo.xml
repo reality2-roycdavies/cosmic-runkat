@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <component type="desktop-application">
-  <id>io.github.reality2-roycdavies.cosmic-runkat</id>
+  <id>io.github.reality2_roycdavies.cosmic-runkat</id>
   <name>RunKat</name>
   <summary>A cute running cat CPU indicator for COSMIC desktop</summary>
   <metadata_license>MIT</metadata_license>
   <project_license>MIT</project_license>
-  <developer id="io.github.reality2-roycdavies">
+  <developer id="io.github.reality2_roycdavies">
     <name>Roy C. Davies</name>
   </developer>
 
@@ -46,7 +46,7 @@
   <url type="bugtracker">https://github.com/reality2-roycdavies/cosmic-runkat/issues</url>
   <url type="vcs-browser">https://github.com/reality2-roycdavies/cosmic-runkat</url>
 
-  <launchable type="desktop-id">io.github.reality2-roycdavies.cosmic-runkat.desktop</launchable>
+  <launchable type="desktop-id">io.github.reality2_roycdavies.cosmic-runkat.desktop</launchable>
 
   <provides>
     <binary>cosmic-runkat</binary>
@@ -60,6 +60,16 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="0.2.4" date="2026-01-17">
+      <description>
+        <p>Bug fixes and Flatpak improvements:</p>
+        <ul>
+          <li>Fixed duplicate tray instance bug causing menu to not appear</li>
+          <li>Replaced pgrep-based detection with lockfile (works in Flatpak sandbox)</li>
+          <li>Fixed app ID naming for Flatpak compliance (underscore in username)</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.2.3" date="2026-01-17">
       <description>
         <p>Flathub compliance update:</p>

@@ -1,4 +1,4 @@
-app-id: io.github.reality2-roycdavies.cosmic-runkat
+app-id: io.github.reality2_roycdavies.cosmic-runkat
 runtime: org.freedesktop.Platform
 runtime-version: '25.08'
 sdk: org.freedesktop.Sdk
@@ -34,12 +34,12 @@ modules:
       - cargo --offline fetch --manifest-path Cargo.toml --verbose
       - cargo --offline build --release --verbose
       - install -Dm755 target/release/cosmic-runkat /app/bin/cosmic-runkat
-      - install -Dm644 resources/io.github.reality2-roycdavies.cosmic-runkat.desktop /app/share/applications/io.github.reality2-roycdavies.cosmic-runkat.desktop
-      - install -Dm644 resources/io.github.reality2-roycdavies.cosmic-runkat.metainfo.xml /app/share/metainfo/io.github.reality2-roycdavies.cosmic-runkat.metainfo.xml
-      - install -Dm644 resources/io.github.reality2-roycdavies.cosmic-runkat.svg /app/share/icons/hicolor/scalable/apps/io.github.reality2-roycdavies.cosmic-runkat.svg
-      - install -Dm644 resources/io.github.reality2-roycdavies.cosmic-runkat-symbolic.svg /app/share/icons/hicolor/symbolic/apps/io.github.reality2-roycdavies.cosmic-runkat-symbolic.svg
+      - install -Dm644 resources/io.github.reality2_roycdavies.cosmic-runkat.desktop /app/share/applications/io.github.reality2_roycdavies.cosmic-runkat.desktop
+      - install -Dm644 resources/io.github.reality2_roycdavies.cosmic-runkat.metainfo.xml /app/share/metainfo/io.github.reality2_roycdavies.cosmic-runkat.metainfo.xml
+      - install -Dm644 resources/io.github.reality2_roycdavies.cosmic-runkat.svg /app/share/icons/hicolor/scalable/apps/io.github.reality2_roycdavies.cosmic-runkat.svg
+      - install -Dm644 resources/io.github.reality2_roycdavies.cosmic-runkat-symbolic.svg /app/share/icons/hicolor/symbolic/apps/io.github.reality2_roycdavies.cosmic-runkat-symbolic.svg
     sources:
       - type: git
         url: https://github.com/reality2-roycdavies/cosmic-runkat.git
-        tag: v0.2.3
+        tag: v0.2.4
       - cargo-sources.json
