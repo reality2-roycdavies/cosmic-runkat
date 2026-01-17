@@ -10,7 +10,7 @@ A cute running cat CPU indicator for the [COSMIC desktop environment](https://sy
 
 This project was developed as an **educational exercise** in collaborative AI-assisted software development, following the same approach used for [cosmic-bing-wallpaper](https://github.com/reality2-roycdavies/cosmic-bing-wallpaper). The entire application was built through iterative conversation between a human developer and Claude (Anthropic's AI assistant) using Claude Code.
 
-**Development time:** Approximately 3 hours from initial concept to working release.
+**Development time:** Approximately 3 hours from initial concept to working release, plus ~2 hours for Flatpak refactoring.
 
 The development process, including all conversations and design decisions, has been documented in the [docs/](docs/) directory for anyone interested in understanding how AI-assisted development works in practice.
 

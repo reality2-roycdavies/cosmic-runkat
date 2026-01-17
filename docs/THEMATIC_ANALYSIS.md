@@ -4,7 +4,7 @@ This document provides a thematic analysis of the collaborative development proc
 
 ## Overview
 
-cosmic-runkat was developed through an iterative conversation in a single session of approximately **3 hours** - from initial concept to working, documented release. The project demonstrates how AI-assisted development works in practice, with particular focus on:
+cosmic-runkat was developed through an iterative conversation in a single session of approximately **3 hours** - from initial concept to working, documented release. An additional **~2 hours** were later spent refactoring for Flatpak compatibility. The project demonstrates how AI-assisted development works in practice, with particular focus on:
 
 - How requirements evolve through dialogue
 - The iterative refinement of visual design
@@ -188,7 +188,7 @@ AI-assisted development is genuinely collaborative - neither party has complete 
 
 ## Important Caveat
 
-It should be noted that cosmic-runkat is a **small, self-contained application** that runs entirely on the desktop without external dependencies or backend services. The ~3 hour development time reflects this scope:
+It should be noted that cosmic-runkat is a **small, self-contained application** that runs entirely on the desktop without external dependencies or backend services. The ~3 hour initial development time (plus ~2 hours for Flatpak refactoring) reflects this scope:
 
 - No network APIs or authentication
 - No database or complex state management
