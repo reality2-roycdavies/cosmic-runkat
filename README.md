@@ -33,7 +33,17 @@ The development process, including all conversations and design decisions, has b
 
 ## Installation
 
-### Build from Source
+### Option 1: Flatpak (Recommended)
+
+```bash
+# Install from Flathub (when available)
+flatpak install flathub io.github.reality2_roycdavies.cosmic-runkat
+
+# Run
+flatpak run io.github.reality2_roycdavies.cosmic-runkat --tray
+```
+
+### Option 2: Build from Source
 
 ```bash
 # Clone the repository
@@ -84,7 +94,7 @@ cosmic-runkat --settings
 cosmic-runkat --help
 ```
 
-The tray app starts automatically on login after installation.
+The tray app automatically creates an XDG autostart entry on first run, so it starts on login.
 
 ## Configuration
 
@@ -123,13 +133,11 @@ Settings can also be changed via the Settings app (right-click tray icon > Setti
 ```
 cosmic-runkat
 ├── src/
-│   ├── main.rs        # Entry point, CLI parsing
+│   ├── main.rs        # Entry point, CLI parsing, autostart setup
 │   ├── tray.rs        # System tray with animated icon
 │   ├── settings.rs    # libcosmic settings app
 │   ├── config.rs      # Configuration management
-│   ├── cpu.rs         # CPU monitoring
-│   ├── daemon.rs      # D-Bus daemon (future use)
-│   └── dbus_client.rs # D-Bus client (future use)
+│   └── cpu.rs         # CPU monitoring
 ├── resources/         # PNG sprites (cat frames, digits)
 ├── docs/              # Development documentation
 └── install.sh         # Installation script
