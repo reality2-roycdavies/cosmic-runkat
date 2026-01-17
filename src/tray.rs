@@ -4,7 +4,7 @@
 //! The animation speed varies based on CPU usage.
 //! CPU percentage is dynamically composited onto the icon.
 
-use image::{DynamicImage, GenericImage, GenericImageView, Rgba, RgbaImage};
+use image::RgbaImage;
 use ksni::{Tray, TrayService};
 use notify::{Config as NotifyConfig, RecommendedWatcher, RecursiveMode, Watcher};
 use std::fs;

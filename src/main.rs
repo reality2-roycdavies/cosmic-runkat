@@ -19,7 +19,7 @@ mod tray;
 
 use std::env;
 use std::fs;
-use std::io::{Read, Write};
+use std::io::Write;
 use std::process::Command;
 
 /// Get the path to the tray lockfile
@@ -29,6 +29,14 @@ fn tray_lockfile_path() -> std::path::PathBuf {
         .map(|d| d.join("cosmic-runkat"))
         .unwrap_or_else(|| std::path::PathBuf::from("/tmp"))
         .join("tray.lock")
+}
+
+/// Get the path to the GUI lockfile
+fn gui_lockfile_path() -> std::path::PathBuf {
+    dirs::config_dir()
+        .map(|d| d.join("cosmic-runkat"))
+        .unwrap_or_else(|| std::path::PathBuf::from("/tmp"))
+        .join("gui.lock")
 }
 
 fn print_help() {
@@ -91,6 +99,37 @@ pub fn remove_tray_lockfile() {
     let _ = fs::remove_file(tray_lockfile_path());
 }
 
+/// Check if the GUI/settings app is already running
+fn is_gui_running() -> bool {
+    let lockfile = gui_lockfile_path();
+
+    if let Ok(metadata) = fs::metadata(&lockfile) {
+        if let Ok(modified) = metadata.modified() {
+            if let Ok(elapsed) = modified.elapsed() {
+                return elapsed.as_secs() < 60;
+            }
+        }
+        return true;
+    }
+    false
+}
+
+/// Create a lockfile to indicate the GUI is running
+pub fn create_gui_lockfile() {
+    let lockfile = gui_lockfile_path();
+    if let Some(parent) = lockfile.parent() {
+        let _ = fs::create_dir_all(parent);
+    }
+    if let Ok(mut file) = fs::File::create(&lockfile) {
+        let _ = write!(file, "{}", std::process::id());
+    }
+}
+
+/// Remove the GUI lockfile when app exits
+pub fn remove_gui_lockfile() {
+    let _ = fs::remove_file(gui_lockfile_path());
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = env::args().collect();
 
@@ -119,8 +158,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 tray::run_tray().map_err(|e| e.into())
             }
             "-s" | "--settings" => {
-                // Settings uses libcosmic which has its own runtime
-                settings::run_settings().map_err(|e| e.into())
+                if is_gui_running() {
+                    println!("Settings window is already open.");
+                    return Ok(());
+                }
+                create_gui_lockfile();
+                let result = settings::run_settings().map_err(|e| e.into());
+                remove_gui_lockfile();
+                result
             }
             arg => {
                 eprintln!("Unknown argument: {}", arg);
@@ -130,6 +175,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     } else {
         // Default: smart mode - always open settings, start tray first if not running
+        if is_gui_running() {
+            println!("Settings window is already open.");
+            return Ok(());
+        }
         if !is_tray_running() {
             println!("Starting cosmic-runkat tray in background...");
             // Start tray in background
@@ -143,6 +192,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             std::thread::sleep(std::time::Duration::from_millis(500));
         }
         println!("Opening settings...");
-        settings::run_settings().map_err(|e| e.into())
+        create_gui_lockfile();
+        let result = settings::run_settings().map_err(|e| e.into());
+        remove_gui_lockfile();
+        result
     }
 }

@@ -21,6 +21,8 @@ pub enum Message {
     ShowPercentageToggled(bool),
     /// Close window
     Close,
+    /// Periodic tick for lockfile refresh
+    Tick,
 }
 
 /// Settings application state
@@ -83,8 +85,18 @@ impl Application for SettingsApp {
             Message::Close => {
                 std::process::exit(0);
             }
+            Message::Tick => {
+                // Refresh the GUI lockfile to indicate we're still running
+                crate::create_gui_lockfile();
+            }
         }
         Task::none()
+    }
+
+    fn subscription(&self) -> cosmic::iced::Subscription<Self::Message> {
+        // Refresh lockfile every 30 seconds
+        cosmic::iced::time::every(std::time::Duration::from_secs(30))
+            .map(|_| Message::Tick)
     }
 
     fn view(&self) -> Element<Self::Message> {
