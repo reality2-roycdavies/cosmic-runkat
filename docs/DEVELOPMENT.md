@@ -481,17 +481,18 @@ Our PR: https://github.com/flathub/flathub/pull/7602
 
 ## Preparing for Flatpak Distribution
 
-The work to make cosmic-runkat and cosmic-bing-wallpaper Flatpak-compatible was done simultaneously for both applications. The comprehensive documentation of this process, including:
+The work to make cosmic-runkat and cosmic-bing-wallpaper Flatpak-compatible was done simultaneously for both applications. This involved significant architectural refactoring to eliminate systemd dependencies and resolve sandbox compatibility issues.
 
-- Eliminating systemd dependencies
-- Resolving PID namespace conflicts with ksni 0.3
-- Flatpak path handling
-- XDG autostart implementation
-- UI cleanup for sandbox compatibility
+**Comprehensive documentation:**
 
-...is maintained in the **cosmic-bing-wallpaper** project's DEVELOPMENT.md:
+- **[FLATPAK-JOURNEY.md](https://github.com/reality2-roycdavies/cosmic-bing-wallpaper/blob/main/docs/FLATPAK-JOURNEY.md)** - The complete story of the Flatpak refactoring, including:
+  - Architecture transformation (systemd → embedded timer)
+  - PID namespace conflicts and the ksni 0.3 solution
+  - Path handling in Flatpak sandboxes
+  - XDG autostart implementation
+  - Debugging sessions and learnings
 
-**See: [cosmic-bing-wallpaper DEVELOPMENT.md - Preparing for Flatpak Distribution](https://github.com/AiAiAi-2/cosmic-bing-wallpaper/blob/main/DEVELOPMENT.md#preparing-for-flatpak-distribution)**
+- **[cosmic-bing-wallpaper DEVELOPMENT.md](https://github.com/reality2-roycdavies/cosmic-bing-wallpaper/blob/main/cosmic-bing-wallpaper/DEVELOPMENT.md#preparing-for-flatpak-distribution)** - Technical details in context
 
 ### Key Differences for cosmic-runkat
 

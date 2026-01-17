@@ -16,6 +16,14 @@ This is the second project developed using this approach, following [cosmic-bing
 | [THEMATIC_ANALYSIS.md](THEMATIC_ANALYSIS.md) | Analysis of patterns in AI-assisted development |
 | [transcripts/](transcripts/) | Complete conversation logs from the development session |
 
+### Shared Documentation
+
+The Flatpak preparation work was done simultaneously for both cosmic-runkat and cosmic-bing-wallpaper. The comprehensive documentation lives in the cosmic-bing-wallpaper repository:
+
+| Document | Description |
+|----------|-------------|
+| [FLATPAK-JOURNEY.md](https://github.com/reality2-roycdavies/cosmic-bing-wallpaper/blob/main/docs/FLATPAK-JOURNEY.md) | The complete story of making these apps Flatpak-compatible |
+
 ## Why Document This?
 
 1. **Transparency** - Show exactly how AI-assisted development works, including the iterative process, mistakes, and corrections
