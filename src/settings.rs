@@ -4,7 +4,7 @@
 
 use cosmic::app::Core;
 use cosmic::iced::Length;
-use cosmic::widget::{self, column, container, row, text, toggler};
+use cosmic::widget::{self, settings, text, toggler};
 use cosmic::{Action, Application, Element, Task};
 
 use crate::config::Config;
@@ -95,46 +95,41 @@ impl Application for SettingsApp {
     }
 
     fn view(&self) -> Element<Self::Message> {
-        let spacing = cosmic::theme::active().cosmic().spacing;
-
-        // Sleep threshold slider
-        let sleep_section = column()
-            .spacing(spacing.space_xxs)
-            .push(text::body("Sleep Threshold"))
-            .push(text::caption(format!(
-                "Cat sleeps when CPU is below {:.0}%",
-                self.config.sleep_threshold
-            )))
-            .push(
-                widget::slider(0.0..=20.0, self.config.sleep_threshold, Message::SleepThresholdChanged)
-                    .step(1.0)
-            );
-
-        // Show percentage toggle
-        let percentage_section = row()
-            .spacing(spacing.space_s)
-            .align_y(cosmic::iced::Alignment::Center)
-            .push(
-                column()
-                    .width(Length::Fill)
-                    .push(text::body("Show CPU Percentage"))
-                    .push(text::caption("Display percentage next to the cat (medium+ panels only)"))
+        // Build sections using COSMIC settings widgets
+        let behavior_section = settings::section()
+            .title("Behavior")
+            .add(
+                settings::item(
+                    "Show CPU Percentage",
+                    toggler(self.config.show_percentage)
+                        .on_toggle(Message::ShowPercentageToggled),
+                )
             )
-            .push(
-                toggler(self.config.show_percentage)
-                    .on_toggle(Message::ShowPercentageToggled)
+            .add(
+                settings::flex_item(
+                    "Sleep Threshold",
+                    widget::row()
+                        .spacing(8)
+                        .align_y(cosmic::iced::Alignment::Center)
+                        .push(text::body(format!("{:.0}%", self.config.sleep_threshold)))
+                        .push(
+                            widget::slider(0.0..=20.0, self.config.sleep_threshold, Message::SleepThresholdChanged)
+                                .step(1.0)
+                                .width(Length::Fill)
+                        ),
+                )
             );
 
-        // Main content
-        let content = column()
-            .spacing(spacing.space_m)
-            .padding(spacing.space_m)
-            .push(sleep_section)
-            .push(percentage_section);
+        // Use settings::view_column for proper COSMIC styling
+        let content = settings::view_column(vec![
+            text::caption("Display percentage next to the cat on medium+ panels. Cat sleeps when CPU is below the threshold.").into(),
+            behavior_section.into(),
+        ]);
 
-        container(content)
+        widget::container(content)
             .width(Length::Fill)
             .height(Length::Fill)
+            .padding(16)
             .into()
     }
 }

@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.2] - 2026-01-18
+
+### Changed
+
+- **COSMIC Style Settings**: Redesigned settings window to match COSMIC design language
+  - Uses `settings::section()` and `settings::item()` widgets
+  - Proper COSMIC-style togglers and sliders with consistent spacing
+  - Settings grouped in card-style sections with headers
+
+---
+
 ## [0.3.1] - 2026-01-18
 
 ### Fixed
