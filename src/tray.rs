@@ -5,7 +5,9 @@
 //! CPU percentage is dynamically composited onto the icon.
 
 use image::RgbaImage;
-use ksni::{Tray, TrayService};
+use ksni::Tray;
+// Import the blocking TrayMethods trait for sync spawn/disable_dbus_name
+use ksni::blocking::TrayMethods as BlockingTrayMethods;
 use notify::{Config as NotifyConfig, RecommendedWatcher, RecursiveMode, Watcher};
 use std::fs;
 use std::path::PathBuf;
@@ -365,11 +367,12 @@ pub fn run_tray() -> Result<(), String> {
 
     let tray = RunkatTray::new(should_quit.clone(), update_tx.clone(), config.show_percentage);
 
-    let service = TrayService::new(tray);
-    let handle = service.handle();
-
     // Spawn the tray service
-    service.spawn();
+    // In Flatpak, disable D-Bus well-known name to avoid PID conflicts
+    let is_sandboxed = std::path::Path::new("/.flatpak-info").exists();
+    let handle = BlockingTrayMethods::disable_dbus_name(tray, is_sandboxed)
+        .spawn()
+        .map_err(|e| format!("Failed to spawn tray: {}", e))?;
 
     // Start CPU monitoring
     let cpu_monitor = CpuMonitor::new();

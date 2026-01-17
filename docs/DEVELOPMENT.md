@@ -10,7 +10,8 @@ This document captures learnings and solutions discovered while developing cosmi
 4. [COSMIC Integration](#cosmic-integration)
 5. [libcosmic Settings App](#libcosmic-settings-app)
 6. [Problem-Solving Journey](#problem-solving-journey)
-7. [Resources](#resources)
+7. [Preparing for Flatpak Distribution](#preparing-for-flatpak-distribution)
+8. [Resources](#resources)
 
 ---
 
@@ -340,7 +341,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 | Crate | Version | Purpose |
 |-------|---------|---------|
-| `ksni` | 0.2 | StatusNotifierItem (system tray) |
+| `ksni` | 0.3 | StatusNotifierItem (system tray) |
 | `image` | 0.24 | PNG decoding and manipulation |
 | `systemstat` | 0.2 | CPU monitoring |
 | `libcosmic` | git | COSMIC toolkit for settings app |
@@ -475,3 +476,39 @@ When submitting AI-assisted projects to Flathub, be transparent:
 - Distinguish from fully automated/unsupervised AI generation
 
 Our PR: https://github.com/flathub/flathub/pull/7602
+
+---
+
+## Preparing for Flatpak Distribution
+
+The work to make cosmic-runkat and cosmic-bing-wallpaper Flatpak-compatible was done simultaneously for both applications. The comprehensive documentation of this process, including:
+
+- Eliminating systemd dependencies
+- Resolving PID namespace conflicts with ksni 0.3
+- Flatpak path handling
+- XDG autostart implementation
+- UI cleanup for sandbox compatibility
+
+...is maintained in the **cosmic-bing-wallpaper** project's DEVELOPMENT.md:
+
+**See: [cosmic-bing-wallpaper DEVELOPMENT.md - Preparing for Flatpak Distribution](https://github.com/AiAiAi-2/cosmic-bing-wallpaper/blob/main/DEVELOPMENT.md#preparing-for-flatpak-distribution)**
+
+### Key Differences for cosmic-runkat
+
+While the Flatpak preparation is largely the same, cosmic-runkat has a few specific differences:
+
+1. **ksni Blocking API:** cosmic-runkat uses ksni's blocking API (for simplicity in the tray loop):
+   ```rust
+   use ksni::blocking::TrayMethods as BlockingTrayMethods;
+
+   let handle = BlockingTrayMethods::disable_dbus_name(tray, is_sandboxed)
+       .spawn()?;
+   ```
+
+2. **CPU Monitoring Permission:** Requires `--filesystem=host:ro` for `/proc/stat` access:
+   ```yaml
+   finish-args:
+     - --filesystem=host:ro  # Required for /proc/stat CPU monitoring
+   ```
+
+3. **No Timer Needed:** Unlike cosmic-bing-wallpaper, cosmic-runkat doesn't need internal timer functionality - it just monitors CPU continuously while running

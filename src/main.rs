@@ -5,15 +5,12 @@
 //!
 //! ## Modes
 //!
-//! - `--daemon` or `-d`: Run the D-Bus daemon (background service)
-//! - `--tray` or `-t`: Run the system tray icon
+//! - `--tray` or `-t`: Run the system tray icon (for autostart)
 //! - `--settings` or `-s`: Open the settings window
-//! - No arguments: Smart mode (settings if tray running, otherwise start tray)
+//! - No arguments: Opens settings (starts tray first if not already running)
 
 mod config;
 mod cpu;
-mod daemon;
-mod dbus_client;
 mod settings;
 mod tray;
 
@@ -46,8 +43,7 @@ fn print_help() {
 Usage: cosmic-runkat [OPTIONS]
 
 Options:
-    -d, --daemon     Run the D-Bus daemon (background service)
-    -t, --tray       Run the system tray icon
+    -t, --tray       Run the system tray icon (for autostart)
     -s, --settings   Open the settings window
     -h, --help       Show this help message
     -v, --version    Show version information
@@ -130,6 +126,56 @@ pub fn remove_gui_lockfile() {
     let _ = fs::remove_file(gui_lockfile_path());
 }
 
+/// Check if running inside a Flatpak sandbox
+fn is_flatpak() -> bool {
+    std::path::Path::new("/.flatpak-info").exists()
+}
+
+/// Ensure autostart entry exists for the tray
+/// Creates an XDG autostart desktop file so the tray starts on login
+fn ensure_autostart() {
+    let autostart_dir = if is_flatpak() {
+        // In Flatpak, write to the host's autostart directory
+        dirs::home_dir().map(|h| h.join(".config/autostart"))
+    } else {
+        dirs::config_dir().map(|d| d.join("autostart"))
+    };
+
+    let Some(autostart_dir) = autostart_dir else {
+        return;
+    };
+
+    let desktop_file = autostart_dir.join("io.github.reality2_roycdavies.cosmic-runkat.desktop");
+
+    // Only create if it doesn't exist (don't overwrite user modifications)
+    if desktop_file.exists() {
+        return;
+    }
+
+    let _ = fs::create_dir_all(&autostart_dir);
+
+    let exec_cmd = if is_flatpak() {
+        "flatpak run io.github.reality2_roycdavies.cosmic-runkat --tray"
+    } else {
+        "cosmic-runkat --tray"
+    };
+
+    let content = format!(
+        r#"[Desktop Entry]
+Type=Application
+Name=RunKat
+Comment=Running cat CPU indicator
+Exec={exec_cmd}
+Icon=io.github.reality2_roycdavies.cosmic-runkat
+Terminal=false
+Categories=Utility;
+X-GNOME-Autostart-enabled=true
+"#
+    );
+
+    let _ = fs::write(&desktop_file, content);
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = env::args().collect();
 
@@ -144,17 +190,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 print_version();
                 Ok(())
             }
-            "-d" | "--daemon" => {
-                println!("Starting cosmic-runkat daemon...");
-                // Run daemon with tokio runtime
-                tokio::runtime::Builder::new_multi_thread()
-                    .enable_all()
-                    .build()?
-                    .block_on(daemon::run_daemon())?;
-                Ok(())
-            }
             "-t" | "--tray" => {
                 println!("Starting cosmic-runkat tray...");
+                ensure_autostart();
                 tray::run_tray().map_err(|e| e.into())
             }
             "-s" | "--settings" => {
