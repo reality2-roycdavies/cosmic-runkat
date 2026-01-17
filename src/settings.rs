@@ -4,7 +4,7 @@
 
 use cosmic::app::Core;
 use cosmic::iced::Length;
-use cosmic::widget::{self, button, column, container, row, text, toggler};
+use cosmic::widget::{self, column, container, row, text, toggler};
 use cosmic::{Action, Application, Element, Task};
 
 use crate::config::Config;
@@ -19,8 +19,6 @@ pub enum Message {
     SleepThresholdChanged(f32),
     /// Show percentage toggled
     ShowPercentageToggled(bool),
-    /// Close window
-    Close,
     /// Periodic tick for lockfile refresh
     Tick,
 }
@@ -82,9 +80,6 @@ impl Application for SettingsApp {
                 // Save immediately so tray updates
                 let _ = self.config.save();
             }
-            Message::Close => {
-                std::process::exit(0);
-            }
             Message::Tick => {
                 // Refresh the GUI lockfile to indicate we're still running
                 crate::create_gui_lockfile();
@@ -130,20 +125,12 @@ impl Application for SettingsApp {
                     .on_toggle(Message::ShowPercentageToggled)
             );
 
-        // Close button
-        let buttons = row()
-            .spacing(spacing.space_s)
-            .push(widget::horizontal_space())
-            .push(button::suggested("Close").on_press(Message::Close));
-
         // Main content
         let content = column()
             .spacing(spacing.space_m)
             .padding(spacing.space_m)
             .push(sleep_section)
-            .push(percentage_section)
-            .push(widget::vertical_space())
-            .push(buttons);
+            .push(percentage_section);
 
         container(content)
             .width(Length::Fill)

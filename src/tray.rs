@@ -34,14 +34,22 @@ const DIGIT_HEIGHT: u32 = 12;
 /// Spacing between cat and percentage
 const CAT_PCT_SPACING: u32 = 2;
 
+/// Get the host's COSMIC config directory
+/// In Flatpak, dirs::config_dir() returns the sandboxed config, not the host's
+fn host_cosmic_config_dir() -> Option<PathBuf> {
+    // Always use home directory + .config to get host's config
+    // This works both in Flatpak (with filesystem access) and native
+    dirs::home_dir().map(|h| h.join(".config/cosmic"))
+}
+
 /// Get the path to COSMIC's theme config file
 fn cosmic_theme_path() -> Option<PathBuf> {
-    dirs::config_dir().map(|d| d.join("cosmic/com.system76.CosmicTheme.Mode/v1/is_dark"))
+    host_cosmic_config_dir().map(|d| d.join("com.system76.CosmicTheme.Mode/v1/is_dark"))
 }
 
 /// Get the path to COSMIC's panel size config file
 fn cosmic_panel_size_path() -> Option<PathBuf> {
-    dirs::config_dir().map(|d| d.join("cosmic/com.system76.CosmicPanel.Panel/v1/size"))
+    host_cosmic_config_dir().map(|d| d.join("com.system76.CosmicPanel.Panel/v1/size"))
 }
 
 /// Check if panel size is medium or larger (M, L, XL)
@@ -490,7 +498,8 @@ pub fn run_tray() -> Result<(), String> {
         // Check for config changes (theme, panel size, or app settings)
         let mut config_changed = config_rx.try_recv().is_ok();
 
-        // Also poll app config periodically (inotify isn't always reliable)
+        // Also poll app config and theme periodically (inotify isn't always reliable)
+        // This runs every ~500ms
         if last_config_check.elapsed() >= CONFIG_CHECK_INTERVAL {
             last_config_check = Instant::now();
             let new_config = Config::load();
@@ -514,6 +523,16 @@ pub fn run_tray() -> Result<(), String> {
                     tray.show_percentage = config.show_percentage;
                 }
             });
+        } else if last_config_check.elapsed() < Duration::from_millis(20) {
+            // Just did a config check - also check if theme/panel changed without config change
+            let new_dark = is_dark_mode();
+            let new_panel = is_panel_medium_or_larger();
+            handle.update(|tray| {
+                if tray.dark_mode != new_dark || tray.panel_medium_or_larger != new_panel {
+                    tray.dark_mode = new_dark;
+                    tray.panel_medium_or_larger = new_panel;
+                }
+            });
         }
 
         // Refresh lockfile timestamp every 30 seconds to indicate we're still running
@@ -533,6 +552,10 @@ pub fn run_tray() -> Result<(), String> {
     }
 
     handle.shutdown();
+
+    // Small delay to ensure ksni's D-Bus resources are released
+    // Without this, the StatusNotifierItem might briefly appear "stuck"
+    std::thread::sleep(std::time::Duration::from_millis(100));
 
     // Clean up lockfile on exit
     crate::remove_tray_lockfile();

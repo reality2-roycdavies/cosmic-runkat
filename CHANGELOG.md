@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.1] - 2026-01-18
+
+### Fixed
+
+- **Flatpak Path Detection**: Fixed COSMIC theme and panel size detection in Flatpak
+  - Now correctly reads from host's ~/.config/cosmic instead of sandboxed config
+  - Fixes percentage text showing on small panels in Flatpak
+
+- **Theme Detection**: Added periodic polling fallback for theme changes
+  - Theme updates now happen within ~1 second instead of relying only on inotify
+
+- **Quit/Restart Reliability**: Improved cleanup when quitting from tray menu
+  - Added delay to ensure D-Bus resources are properly released
+  - Fixes issue where app wouldn't restart after quitting
+
+### Changed
+
+- Removed "Close" button from settings window (use window controls instead)
+
+---
+
 ## [0.3.0] - 2026-01-18
 
 ### Changed
