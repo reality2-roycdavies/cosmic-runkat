@@ -96,20 +96,3 @@ impl Drop for CpuMonitor {
         self.stop();
     }
 }
-
-/// Get a single CPU usage reading (blocking, takes ~1 second)
-pub fn get_cpu_usage() -> Result<f32, String> {
-    let sys = System::new();
-
-    let cpu = sys
-        .cpu_load_aggregate()
-        .map_err(|e| format!("Failed to start CPU measurement: {}", e))?;
-
-    thread::sleep(Duration::from_secs(1));
-
-    let cpu_load = cpu
-        .done()
-        .map_err(|e| format!("Failed to complete CPU measurement: {}", e))?;
-
-    Ok((1.0 - cpu_load.idle) * 100.0)
-}

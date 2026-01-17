@@ -18,8 +18,8 @@ This document describes how to build and publish cosmic-runkat as a Flatpak.
 
 2. Install the Flatpak SDK:
    ```bash
-   flatpak install flathub org.freedesktop.Platform//24.08 org.freedesktop.Sdk//24.08
-   flatpak install flathub org.freedesktop.Sdk.Extension.rust-stable//24.08
+   flatpak install flathub org.freedesktop.Platform//25.08 org.freedesktop.Sdk//25.08
+   flatpak install flathub org.freedesktop.Sdk.Extension.rust-stable//25.08
    ```
 
 ## Generating cargo-sources.json
@@ -48,21 +48,21 @@ The Flatpak build requires a `cargo-sources.json` file that lists all Cargo depe
 
 ```bash
 cd /path/to/cosmic-runkat
-flatpak-builder --force-clean build-dir io.github.cosmic-runkat.yml
+flatpak-builder --force-clean build-dir io.github.reality2_roycdavies.cosmic-runkat.yml
 ```
 
 ## Testing Locally
 
 ```bash
-flatpak-builder --user --install --force-clean build-dir io.github.cosmic-runkat.yml
-flatpak run io.github.cosmic-runkat
+flatpak-builder --user --install --force-clean build-dir io.github.reality2_roycdavies.cosmic-runkat.yml
+flatpak run io.github.reality2_roycdavies.cosmic-runkat
 ```
 
 ## Publishing to Flathub
 
 1. Fork https://github.com/flathub/flathub
 2. Create a new branch named `new-pr`
-3. Add your manifest as `io.github.cosmic-runkat.yml`
+3. Add your manifest as `io.github.reality2_roycdavies.cosmic-runkat.yml`
 4. Submit a pull request
 5. Follow the Flathub review process
 
@@ -74,7 +74,8 @@ See https://github.com/flathub/flathub/wiki/App-Submission for detailed instruct
 - It will not function properly on other desktop environments
 - The Flatpak has permissions to:
   - Access Wayland/X11 display
-  - Access the system tray via StatusNotifierItem
-  - Read CPU statistics from `/proc/stat`
+  - Access the system tray via StatusNotifierItem (D-Bus session bus)
+  - Read CPU statistics from `/proc/stat` (host filesystem read-only)
   - Read COSMIC configuration from `~/.config/cosmic`
   - Store app configuration in `~/.config/cosmic-runkat`
+  - Create autostart entry in `~/.config/autostart`
