@@ -24,7 +24,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 APP_NAME="cosmic-runkat"
-APP_ID="io.github.cosmic-runkat"
+APP_ID="io.github.reality2_roycdavies.cosmic-runkat"
 
 # Determine install prefix based on whether running as root
 if [[ $EUID -eq 0 ]]; then
