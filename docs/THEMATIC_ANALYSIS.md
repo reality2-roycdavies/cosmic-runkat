@@ -235,6 +235,60 @@ The value of documenting this small project lies in showing what AI-assisted dev
 
 ---
 
+## Addendum: Session 2 - UI Polish & Lockfile Robustness
+
+A follow-up session addressed UI conformance to COSMIC design language and stale lockfile issues. This revealed additional themes building on lessons from cosmic-bing-wallpaper:
+
+### Theme 8: Cross-Project Learning
+
+**Pattern:** Fixes developed for one project were immediately applied to the other.
+
+**Example:**
+- Stale lockfile bug discovered in cosmic-bing-wallpaper (settings wouldn't open after logout/login)
+- Root cause identified: lockfile detection assumed "running" when metadata couldn't be read
+- Fix developed: conservative fallback + `cleanup_stale_lockfiles()` at startup
+- Same fix immediately applied to cosmic-runkat
+
+**Insight:** Maintaining multiple similar projects creates opportunities for pattern recognition. A bug found in one is likely present in the other.
+
+### Theme 9: Session-Boundary Testing
+
+**Pattern:** Bugs that only manifest across session boundaries (logout/login, restart) are invisible to within-session testing.
+
+**The Bug:**
+- After logout/login, tray icon appeared but settings window wouldn't open
+- Required second logout/login cycle to work
+- Root cause: stale lockfile from previous session blocking new instance detection
+
+**Discovery:** The human tested the logout/login scenario, something AI cannot simulate. This cross-session testing revealed a class of bugs that typical development testing misses.
+
+**Insight:** Human testing must explicitly include session-crossing scenarios: quit and restart, logout and login, reboot. These exercise state persistence code paths that are otherwise untested.
+
+### Theme 10: Design Language Consistency
+
+**Pattern:** Both COSMIC apps should follow the same design patterns for user familiarity.
+
+**Changes:**
+- Refactored settings UI to use `settings::section()`, `settings::item()`, `toggler()`
+- Added proper page title with `text::title1()`
+- Applied `settings::view_column()` for proper spacing
+- Matched cosmic-bing-wallpaper's settings style
+
+**Insight:** When developing multiple apps for the same platform, consistency across apps matters. Users who use both apps expect them to look and behave similarly.
+
+---
+
+### Updated Recommendations
+
+Building on the original recommendations, Session 2 adds:
+
+6. **Test across session boundaries** - Explicitly test quit/restart and logout/login scenarios
+7. **Apply fixes across projects** - When you find a bug in one project, check if the same bug exists in related projects
+8. **Follow platform design language** - Use the platform's widget patterns, not just its widget library
+9. **Conservative state detection** - When detecting running instances, "assume not running" is safer than "assume running"
+
+---
+
 ## Transcript Access
 
 Complete conversation transcripts are available in the [transcripts/](transcripts/) directory for researchers and developers interested in the detailed dialogue patterns.
