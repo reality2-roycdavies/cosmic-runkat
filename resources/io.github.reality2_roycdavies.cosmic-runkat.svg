@@ -1,30 +1,61 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
-  <!-- Background circle -->
-  <circle cx="32" cy="32" r="30" fill="#3584e4"/>
+<svg width="256" height="256" viewBox="0 0 256 256" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <!-- COSMIC-style dark gradient background (matching bing-wallpaper) -->
+    <linearGradient id="bgGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#3d4f7c;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#252a3d;stop-opacity:1" />
+    </linearGradient>
+    <!-- Accent gradient (COSMIC teal) -->
+    <linearGradient id="accentGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#5cc4b5;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#48a999;stop-opacity:1" />
+    </linearGradient>
+  </defs>
 
-  <!-- Running cat silhouette - white on blue -->
-  <g fill="#ffffff" transform="translate(8, 16)">
+  <!-- Outer rounded square (COSMIC style - matching bing-wallpaper) -->
+  <rect x="8" y="8" width="240" height="240" rx="48" ry="48" fill="url(#bgGradient)"/>
+
+  <!-- CPU meter arc background -->
+  <circle cx="128" cy="128" r="80" fill="none" stroke="#2d3548" stroke-width="16"/>
+
+  <!-- CPU meter arc (teal accent - represents activity) -->
+  <circle cx="128" cy="128" r="80" fill="none" stroke="url(#accentGradient)" stroke-width="16"
+          stroke-dasharray="377" stroke-dashoffset="94" stroke-linecap="round"
+          transform="rotate(-90 128 128)"/>
+
+  <!-- Running cat silhouette (centered, white) -->
+  <g fill="#ffffff" transform="translate(78, 88) scale(2.2)">
     <!-- Body -->
-    <rect x="12" y="12" width="20" height="10" rx="2"/>
+    <ellipse cx="25" cy="22" rx="18" ry="10"/>
 
     <!-- Head -->
-    <rect x="28" y="6" width="12" height="10" rx="2"/>
+    <ellipse cx="42" cy="16" rx="10" ry="9"/>
 
     <!-- Ears -->
-    <polygon points="30,6 32,0 34,6"/>
-    <polygon points="36,6 38,0 40,6"/>
+    <polygon points="36,8 39,2 42,8"/>
+    <polygon points="44,7 47,1 50,7"/>
 
-    <!-- Tail - curved up -->
-    <path d="M12,14 Q4,14 6,6 Q8,2 12,4" stroke="#ffffff" stroke-width="3" fill="none" stroke-linecap="round"/>
+    <!-- Tail - curved up with energy -->
+    <path d="M7,20 Q-2,18 2,8 Q6,2 12,6" stroke="#ffffff" stroke-width="4" fill="none" stroke-linecap="round"/>
 
-    <!-- Front leg extended -->
-    <rect x="26" y="22" width="4" height="10" rx="1"/>
+    <!-- Front leg extended (running) -->
+    <rect x="38" y="30" width="5" height="12" rx="2"/>
 
-    <!-- Back leg extended back -->
-    <rect x="14" y="22" width="4" height="8" rx="1" transform="rotate(-20, 16, 22)"/>
+    <!-- Back leg extended (running) -->
+    <rect x="12" y="28" width="5" height="10" rx="2" transform="rotate(-25 14 28)"/>
 
     <!-- Eye -->
-    <circle cx="36" cy="10" r="1.5" fill="#3584e4"/>
+    <circle cx="46" cy="14" r="2" fill="#3d4f7c"/>
   </g>
+
+  <!-- Bottom status bar (matching bing-wallpaper style) -->
+  <rect x="32" y="200" width="192" height="32" rx="10" ry="10" fill="#2d3548"/>
+
+  <!-- CPU text indicator -->
+  <text x="128" y="222" text-anchor="middle" fill="#48a999" font-family="sans-serif" font-size="16" font-weight="bold">CPU</text>
+
+  <!-- Activity dots -->
+  <circle cx="56" cy="216" r="6" fill="#48a999"/>
+  <circle cx="200" cy="216" r="6" fill="#48a999" opacity="0.5"/>
 </svg>

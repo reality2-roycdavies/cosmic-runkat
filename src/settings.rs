@@ -10,7 +10,7 @@ use cosmic::{Action, Application, Element, Task};
 use crate::config::Config;
 
 /// Application ID
-pub const APP_ID: &str = "io.github.cosmic-runkat.settings";
+pub const APP_ID: &str = "io.github.reality2_roycdavies.cosmic-runkat";
 
 /// Messages for the settings application
 #[derive(Debug, Clone)]
