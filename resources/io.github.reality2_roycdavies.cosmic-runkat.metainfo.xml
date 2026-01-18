@@ -57,6 +57,17 @@
     <color type="primary" scheme_preference="dark">#303030</color>
   </branding>
 
+  <screenshots>
+    <screenshot type="default">
+      <caption>RunKat Settings - Configure CPU threshold and display options</caption>
+      <image type="source">https://raw.githubusercontent.com/reality2-roycdavies/cosmic-runkat/main/screenshots/settings.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>RunKat in system tray showing CPU percentage</caption>
+      <image type="source">https://raw.githubusercontent.com/reality2-roycdavies/cosmic-runkat/main/screenshots/tray.png</image>
+    </screenshot>
+  </screenshots>
+
   <content_rating type="oars-1.1" />
 
   <releases>
