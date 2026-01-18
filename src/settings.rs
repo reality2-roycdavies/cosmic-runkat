@@ -95,6 +95,9 @@ impl Application for SettingsApp {
     }
 
     fn view(&self) -> Element<Self::Message> {
+        // Page title (large, like COSMIC Settings)
+        let page_title = text::title1("RunKat Settings");
+
         // Build sections using COSMIC settings widgets
         let behavior_section = settings::section()
             .title("Behavior")
@@ -122,15 +125,20 @@ impl Application for SettingsApp {
 
         // Use settings::view_column for proper COSMIC styling
         let content = settings::view_column(vec![
+            page_title.into(),
             text::caption("Display percentage next to the cat on medium+ panels. Cat sleeps when CPU is below the threshold.").into(),
             behavior_section.into(),
         ]);
 
-        widget::container(content)
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .padding(16)
-            .into()
+        widget::container(
+            widget::container(content)
+                .max_width(800)
+        )
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .center_x(Length::Fill)
+        .padding(16)
+        .into()
     }
 }
 
