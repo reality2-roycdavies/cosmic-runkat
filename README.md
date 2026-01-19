@@ -81,13 +81,13 @@ sudo pacman -S base-devel cargo cmake dbus expat fontconfig freetype2 libxkbcomm
 ## Usage
 
 ```bash
-# Run the system tray (default)
+# Open settings (starts tray automatically if not running)
 cosmic-runkat
 
-# Or explicitly
+# Run the system tray only (for autostart)
 cosmic-runkat --tray
 
-# Open settings
+# Open settings explicitly
 cosmic-runkat --settings
 
 # Show help
