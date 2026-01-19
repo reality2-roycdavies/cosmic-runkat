@@ -33,17 +33,32 @@ The development process, including all conversations and design decisions, has b
 
 ## Installation
 
-### Option 1: Flatpak (Recommended)
+### Option 1: Flatpak from GitHub
+
+Build and install the Flatpak package directly from GitHub:
 
 ```bash
-# Install from Flathub (when available)
-flatpak install flathub io.github.reality2_roycdavies.cosmic-runkat
+# Install flatpak-builder if not already installed
+sudo apt install flatpak-builder  # Debian/Ubuntu/Pop!_OS
+sudo pacman -S flatpak-builder    # Arch/Manjaro
+
+# Clone the repository
+git clone https://github.com/reality2-roycdavies/cosmic-runkat.git
+cd cosmic-runkat
+
+# Build and install the Flatpak (first build takes a while)
+flatpak-builder --user --install --force-clean build-dir flathub/io.github.reality2_roycdavies.cosmic-runkat.yml
 
 # Run
 flatpak run io.github.reality2_roycdavies.cosmic-runkat --tray
 ```
 
-### Option 2: Build from Source
+**Install from Flathub** (when/if available):
+```bash
+flatpak install flathub io.github.reality2_roycdavies.cosmic-runkat
+```
+
+### Option 2: Native Build from Source
 
 ```bash
 # Clone the repository
