@@ -33,9 +33,7 @@ The development process, including all conversations and design decisions, has b
 
 ## Installation
 
-### Option 1: Flatpak from GitHub
-
-Build and install the Flatpak package directly from GitHub:
+Build and install the Flatpak package from GitHub:
 
 ```bash
 # Install flatpak-builder if not already installed
@@ -46,70 +44,30 @@ sudo pacman -S flatpak-builder    # Arch/Manjaro
 git clone https://github.com/reality2-roycdavies/cosmic-runkat.git
 cd cosmic-runkat
 
-# Build and install the Flatpak (first build takes a while)
+# Build and install the Flatpak (first build downloads dependencies)
 flatpak-builder --user --install --force-clean build-dir flathub/io.github.reality2_roycdavies.cosmic-runkat.yml
 
-# Run
+# Run the tray (will auto-start on future logins)
 flatpak run io.github.reality2_roycdavies.cosmic-runkat --tray
-```
 
-**Install from Flathub** (when/if available):
-```bash
-flatpak install flathub io.github.reality2_roycdavies.cosmic-runkat
-```
-
-### Option 2: Native Build from Source
-
-```bash
-# Clone the repository
-git clone https://github.com/reality2-roycdavies/cosmic-runkat.git
-cd cosmic-runkat
-
-# Install (builds and installs to ~/.local)
-./install.sh
-
-# Or install system-wide
-sudo ./install.sh
-```
-
-### Dependencies
-
-**Build Dependencies** (Pop!_OS/Ubuntu/Debian):
-```bash
-sudo apt install -y \
-    build-essential \
-    cargo \
-    cmake \
-    libdbus-1-dev \
-    libexpat1-dev \
-    libfontconfig-dev \
-    libfreetype-dev \
-    libxkbcommon-dev \
-    pkg-config
-```
-
-**Arch Linux/Manjaro**:
-```bash
-sudo pacman -S base-devel cargo cmake dbus expat fontconfig freetype2 libxkbcommon
+# Open settings
+flatpak run io.github.reality2_roycdavies.cosmic-runkat
 ```
 
 ## Usage
 
 ```bash
 # Open settings (starts tray automatically if not running)
-cosmic-runkat
+flatpak run io.github.reality2_roycdavies.cosmic-runkat
 
 # Run the system tray only (for autostart)
-cosmic-runkat --tray
-
-# Open settings explicitly
-cosmic-runkat --settings
+flatpak run io.github.reality2_roycdavies.cosmic-runkat --tray
 
 # Show help
-cosmic-runkat --help
+flatpak run io.github.reality2_roycdavies.cosmic-runkat --help
 ```
 
-The tray app automatically creates an XDG autostart entry on first run, so it starts on login.
+The tray automatically creates an XDG autostart entry on first run, so it starts on login.
 
 ## Configuration
 
@@ -169,9 +127,7 @@ The [docs/](docs/) directory contains:
 ## Uninstalling
 
 ```bash
-./install.sh --uninstall
-# Or system-wide
-sudo ./install.sh --uninstall
+flatpak uninstall io.github.reality2_roycdavies.cosmic-runkat
 ```
 
 ## License
