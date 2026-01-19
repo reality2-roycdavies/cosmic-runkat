@@ -274,7 +274,7 @@ impl RunkatTray {
 
 impl Tray for RunkatTray {
     fn id(&self) -> String {
-        "io.github.cosmic-runkat".to_string()
+        "io.github.reality2_roycdavies.cosmic-runkat".to_string()
     }
 
     fn icon_theme_path(&self) -> String {
