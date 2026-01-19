@@ -44,15 +44,15 @@ impl Application for SettingsApp {
         &mut self.core
     }
 
-    fn header_start(&self) -> Vec<Element<Self::Message>> {
+    fn header_start(&self) -> Vec<Element<'_, Self::Message>> {
         vec![]
     }
 
-    fn header_center(&self) -> Vec<Element<Self::Message>> {
+    fn header_center(&self) -> Vec<Element<'_, Self::Message>> {
         vec![text::heading("RunKat Settings").into()]
     }
 
-    fn header_end(&self) -> Vec<Element<Self::Message>> {
+    fn header_end(&self) -> Vec<Element<'_, Self::Message>> {
         vec![]
     }
 
@@ -94,7 +94,7 @@ impl Application for SettingsApp {
             .map(|_| Message::Tick)
     }
 
-    fn view(&self) -> Element<Self::Message> {
+    fn view(&self) -> Element<'_, Self::Message> {
         // Page title (large, like COSMIC Settings)
         let page_title = text::title1("RunKat Settings");
 

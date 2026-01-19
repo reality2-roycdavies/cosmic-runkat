@@ -90,13 +90,25 @@ mod tests {
     fn test_fps_calculation() {
         let config = Config::default();
 
-        // Below threshold = sleeping
-        assert_eq!(config.calculate_fps(3.0), 0.0);
+        // At very low CPU, fps should be close to min_fps
+        let low_fps = config.calculate_fps(3.0);
+        assert!(low_fps >= config.min_fps);
+        assert!(low_fps < config.min_fps + 1.0);
 
-        // At threshold = min fps
-        assert!(config.calculate_fps(5.0) >= config.min_fps);
-
-        // At 100% = max fps
+        // At 100% CPU = max fps
         assert!((config.calculate_fps(100.0) - config.max_fps).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_sleep_threshold() {
+        let config = Config::default();
+
+        // Below threshold = sleeping
+        assert!(config.should_sleep(3.0));
+        assert!(config.should_sleep(4.9));
+
+        // At or above threshold = not sleeping
+        assert!(!config.should_sleep(5.0));
+        assert!(!config.should_sleep(50.0));
     }
 }

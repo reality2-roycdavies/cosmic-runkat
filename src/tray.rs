@@ -14,7 +14,7 @@ use std::path::PathBuf;
 use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::collections::VecDeque;
-use std::sync::mpsc::{channel, Sender};
+use std::sync::mpsc::channel;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -143,9 +143,7 @@ fn composite_sprite(target: &mut RgbaImage, sprite: &RgbaImage, x: u32, y: u32) 
 pub struct RunkatTray {
     /// Flag to signal when the tray should exit
     should_quit: Arc<AtomicBool>,
-    /// Channel to signal updates needed
-    update_tx: Sender<()>,
-    /// Current animation frame (0-4 for running)
+    /// Current animation frame (0-9 for running)
     current_frame: u8,
     /// Current CPU percentage
     cpu_percent: f32,
@@ -160,10 +158,9 @@ pub struct RunkatTray {
 }
 
 impl RunkatTray {
-    pub fn new(should_quit: Arc<AtomicBool>, update_tx: Sender<()>, show_percentage: bool) -> Self {
+    pub fn new(should_quit: Arc<AtomicBool>, show_percentage: bool) -> Self {
         Self {
             should_quit,
-            update_tx,
             current_frame: 0,
             cpu_percent: 0.0,
             is_sleeping: true,
@@ -368,12 +365,11 @@ pub fn run_tray() -> Result<(), String> {
     crate::create_tray_lockfile();
 
     let should_quit = Arc::new(AtomicBool::new(false));
-    let (update_tx, update_rx) = channel();
 
     // Load config
     let config = Config::load();
 
-    let tray = RunkatTray::new(should_quit.clone(), update_tx.clone(), config.show_percentage);
+    let tray = RunkatTray::new(should_quit.clone(), config.show_percentage);
 
     // Spawn the tray service
     // In Flatpak, disable D-Bus well-known name to avoid PID conflicts
@@ -384,7 +380,6 @@ pub fn run_tray() -> Result<(), String> {
 
     // Start CPU monitoring
     let cpu_monitor = CpuMonitor::new();
-    let mut cpu_rx = cpu_monitor.subscribe();
     cpu_monitor.start(Duration::from_millis(500));
 
     // Set up file watcher for theme, panel size, and app config changes
