@@ -250,7 +250,7 @@ impl Application for SettingsApp {
     type Flags = ();
     type Message = Message;
 
-    const APP_ID: &'static str = "io.github.cosmic-runkat.settings";
+    const APP_ID: &'static str = "io.github.reality2_roycdavies.cosmic-runkat";
 
     fn init(core: Core, _flags: Self::Flags) -> (Self, Task<Action<Self::Message>>) {
         (Self { core, config: Config::load() }, Task::none())
@@ -278,28 +278,27 @@ impl Application for SettingsApp {
 }
 ```
 
-### Avoiding Tokio Runtime Conflicts
+### Simple Main Structure
 
-The settings app uses libcosmic which has its own runtime. We avoid conflicts by not using `#[tokio::main]`:
+Unlike cosmic-bing-wallpaper, cosmic-runkat doesn't need a daemon or complex async runtime. The app has three simple modes:
 
 ```rust
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     match args[1].as_str() {
-        "-d" | "--daemon" => {
-            // Build tokio runtime only when needed
-            tokio::runtime::Builder::new_multi_thread()
-                .enable_all()
-                .build()?
-                .block_on(daemon::run_daemon())?;
+        "-t" | "--tray" => {
+            // Run the system tray with animated cat
+            tray::run_tray().map_err(|e| e.into())
         }
         "-s" | "--settings" => {
-            // libcosmic has its own runtime
-            settings::run_settings()?;
+            // Open settings window (libcosmic has its own runtime)
+            settings::run_settings().map_err(|e| e.into())
         }
-        // ...
+        // Default (no args): Open settings, start tray first if not running
     }
 }
 ```
+
+The tray reads CPU directly using `systemstat` in a simple synchronous loop - no async runtime needed.
 
 ---
 
@@ -333,6 +332,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 **Solution:** Added polling every 500ms as fallback, checking if config values actually changed
 
+### Autostart Race Condition
+
+**Problem:** Tray icon wouldn't appear when autostarting at login, but worked if started manually after login
+
+**Discovery:** StatusNotifierWatcher service wasn't ready when the tray spawned during login. cosmic-bing-wallpaper worked because its D-Bus initialization naturally added enough delay.
+
+**Solution:** Added a 2-second startup delay at the beginning of `run_tray()`:
+
+```rust
+pub fn run_tray() -> Result<(), String> {
+    // Brief delay on startup to ensure StatusNotifierWatcher is ready
+    // This helps when autostarting at login before the panel is fully initialized
+    std::thread::sleep(Duration::from_secs(2));
+
+    // ... rest of tray initialization
+}
+```
+
 ---
 
 ## Resources
@@ -346,8 +363,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 | `systemstat` | 0.2 | CPU monitoring |
 | `libcosmic` | git | COSMIC toolkit for settings app |
 | `notify` | 6 | File system watching |
-| `tokio` | 1 | Async runtime (daemon only) |
-| `zbus` | 4 | D-Bus (prepared for future use) |
+| `dirs` | 5 | XDG directory paths |
 
 ### COSMIC Desktop Paths
 
