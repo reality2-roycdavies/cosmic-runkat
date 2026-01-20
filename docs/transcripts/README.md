@@ -5,6 +5,7 @@ This directory contains the complete conversation transcripts from the developme
 ## Contents
 
 - `session-01.md` - Main development session covering initial implementation through final polish
+- `session-02.md` - Cross-distribution Flatpak testing on Pop!_OS after development on Manjaro
 
 ## About These Transcripts
 

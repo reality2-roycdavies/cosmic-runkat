@@ -270,6 +270,9 @@ impl RunkatTray {
 }
 
 impl Tray for RunkatTray {
+    // Show menu on left-click (same as right-click)
+    const MENU_ON_ACTIVATE: bool = true;
+
     fn id(&self) -> String {
         "io.github.reality2_roycdavies.cosmic-runkat".to_string()
     }

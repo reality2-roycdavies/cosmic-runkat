@@ -289,6 +289,79 @@ Building on the original recommendations, Session 2 adds:
 
 ---
 
+## Addendum: Session 3 - Cross-Distribution Flatpak Testing
+
+A third session addressed Flatpak compatibility when testing on Pop!_OS after development on Manjaro. This revealed themes about cross-distribution deployment:
+
+### Theme 11: SDK Extension Version Matching
+
+**Pattern:** Flatpak SDK extensions are tied to specific runtime versions.
+
+**The Problem:**
+- Apps built successfully on Manjaro
+- On Pop!_OS: `cargo: command not found`
+- Different runtime version (25.08 vs 24.08) required matching SDK extension
+
+**Fix:** `flatpak install org.freedesktop.Sdk.Extension.rust-stable//25.08`
+
+**Insight:** Cross-distribution testing reveals SDK extension mismatches. The same Flatpak manifest may require different extensions on different systems.
+
+### Theme 12: GPU Access Requirements
+
+**Pattern:** COSMIC apps using libcosmic need explicit GPU access in Flatpak sandboxes.
+
+**The Bug:**
+- App built and started
+- Mesa/EGL warnings: `libEGL warning: failed to get driver name for fd -1`
+
+**Fix:** Added `--device=dri` to Flatpak manifest finish-args.
+
+**Insight:** Hardware acceleration isn't granted by default in Flatpak. Desktop GUI apps typically need `--device=dri`.
+
+### Theme 13: Library Conventions vs Platform Conventions
+
+**Pattern:** Library defaults may conflict with platform user expectations.
+
+**The Bug:**
+- Tray icon responded to right-click but not left-click
+- User expected left-click to show menu
+
+**Root Cause:** ksni library default is left-click calls `activate()` (which we don't implement), right-click shows menu.
+
+**Fix:**
+```rust
+impl Tray for RunkatTray {
+    const MENU_ON_ACTIVATE: bool = true;  // Left-click shows menu
+```
+
+**Insight:** Library documentation describes what code does, not what users expect. Platform conventions often require explicit configuration.
+
+### Theme 14: Known Platform Bugs
+
+**Pattern:** Some issues aren't bugs in your code but in the platform itself.
+
+**The Issue:**
+- Tray icons registered with StatusNotifierWatcher (verified via D-Bus introspection)
+- Icons didn't appear in COSMIC panel
+- Required panel restart to appear
+
+**Root Cause:** Known bug in cosmic-applet-status-area (Issue #1245, PR #1252).
+
+**Insight:** When debugging, verify your code is working correctly before assuming it's broken. Platform bugs can mask correct behavior.
+
+---
+
+### Updated Recommendations (Session 3)
+
+Building on previous recommendations:
+
+10. **Test on multiple distributions** - Flatpak "portability" requires verification across different Linux distributions
+11. **Check SDK extension versions** - Runtime versions require matching SDK extension versions
+12. **Know your libraries' defaults** - Library conventions may not match platform expectations
+13. **Research platform bugs** - When behavior is inexplicable, check the platform's issue tracker
+
+---
+
 ## Transcript Access
 
 Complete conversation transcripts are available in the [transcripts/](transcripts/) directory for researchers and developers interested in the detailed dialogue patterns.

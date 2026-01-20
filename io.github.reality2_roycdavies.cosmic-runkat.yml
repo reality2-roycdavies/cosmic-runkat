@@ -11,6 +11,8 @@ finish-args:
   - --share=ipc
   - --socket=fallback-x11
   - --socket=wayland
+  # GPU access for hardware rendering
+  - --device=dri
   # System tray via StatusNotifierItem (D-Bus)
   # Exception requested: system tray requires session bus access for StatusNotifierItem protocol
   - --socket=session-bus
