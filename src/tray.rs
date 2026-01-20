@@ -364,6 +364,10 @@ impl Tray for RunkatTray {
 
 /// Starts the system tray service with animated icon
 pub fn run_tray() -> Result<(), String> {
+    // Brief delay on startup to ensure StatusNotifierWatcher is ready
+    // This helps when autostarting at login before the panel is fully initialized
+    std::thread::sleep(Duration::from_secs(2));
+
     // Create lockfile to indicate tray is running
     crate::create_tray_lockfile();
 
