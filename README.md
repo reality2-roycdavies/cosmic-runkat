@@ -14,6 +14,36 @@ This project was developed as an **educational exercise** in collaborative AI-as
 
 The development process, including all conversations and design decisions, has been documented in the [docs/](docs/) directory for anyone interested in understanding how AI-assisted development works in practice.
 
+### What the Thematic Analysis Revealed
+
+A thematic analysis of our conversation transcripts identified key patterns across 3 development sessions:
+
+| Theme | Finding |
+|-------|---------|
+| **Leveraging Prior Learning** | Built on lessons from cosmic-bing-wallpaper (pixmap icons, inotify, architecture) |
+| **Iterative Visual Refinement** | Cat animation went through 5+ iterations based on real-time visual feedback |
+| **Platform-Specific Discovery** | COSMIC internals discovered empirically (panel sizes, theme config locations) |
+| **User Experience Simplification** | Removed animation speed settings—"they make no sense to an average user" |
+| **Cross-Project Bug Fixes** | Lockfile bug found in cosmic-bing-wallpaper immediately fixed here too |
+| **SDK Extension Version Matching** | Flatpak apps need matching SDK extension versions per runtime |
+| **Library vs Platform Conventions** | ksni defaults (right-click menu) didn't match user expectations (left-click) |
+
+The emerging model of AI-assisted development:
+
+| Role | AI | Human |
+|------|:---:|:-----:|
+| Write code | ✓ | |
+| Fix compilation errors | ✓ | |
+| Propose solutions | ✓ | |
+| Test in real environment | | ✓ |
+| Recognise incorrect behaviour | | ✓ |
+| Test across session boundaries | | ✓ |
+| **Test across distributions** | | ✓ |
+| Make final decisions | | ✓ |
+| Know when to stop | | ✓ |
+
+*See [docs/THEMATIC_ANALYSIS.md](docs/THEMATIC_ANALYSIS.md) for the complete analysis (14 themes across 3 sessions).*
+
 ### Credits
 
 - **Original Inspiration**: [RunCat](https://github.com/Kyome22/RunCat_for_windows) by Kyome22 - A delightful macOS/Windows app that shows a running cat in the menu bar whose speed reflects CPU usage
@@ -121,8 +151,10 @@ cosmic-runkat
 The [docs/](docs/) directory contains:
 
 - **DEVELOPMENT.md**: Technical notes and learnings from the development process
-- **THEMATIC_ANALYSIS.md**: Analysis of themes and patterns from the AI-assisted development
+- **THEMATIC_ANALYSIS.md**: 14 themes identified across 3 development sessions
 - **transcripts/**: Complete conversation transcripts for educational purposes
+  - `session-01.md`: Initial development through final polish
+  - `session-02.md`: Cross-distribution Flatpak testing on Pop!_OS
 
 ## Uninstalling
 
