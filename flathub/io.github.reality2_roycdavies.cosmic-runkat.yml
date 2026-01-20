@@ -39,7 +39,6 @@ modules:
       - install -Dm644 resources/io.github.reality2_roycdavies.cosmic-runkat.svg /app/share/icons/hicolor/scalable/apps/io.github.reality2_roycdavies.cosmic-runkat.svg
       - install -Dm644 resources/io.github.reality2_roycdavies.cosmic-runkat-symbolic.svg /app/share/icons/hicolor/symbolic/apps/io.github.reality2_roycdavies.cosmic-runkat-symbolic.svg
     sources:
-      - type: git
-        url: https://github.com/reality2-roycdavies/cosmic-runkat.git
-        tag: v0.3.3
+      - type: dir
+        path: ..
       - cargo-sources.json
