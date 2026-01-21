@@ -138,6 +138,15 @@ fn composite_sprite(target: &mut RgbaImage, sprite: &RgbaImage, x: u32, y: u32) 
     }
 }
 
+/// Reason for tray exit - used for suspend/resume detection
+#[derive(Debug)]
+enum TrayExitReason {
+    /// User requested quit via menu
+    Quit,
+    /// Detected suspend/resume, should restart tray
+    SuspendResume,
+}
+
 /// The system tray implementation
 #[derive(Debug)]
 pub struct RunkatTray {
@@ -363,11 +372,33 @@ impl Tray for RunkatTray {
 }
 
 /// Starts the system tray service with animated icon
+///
+/// The tray automatically restarts after suspend/resume to recover from
+/// stale D-Bus connections that cause the icon to disappear.
 pub fn run_tray() -> Result<(), String> {
     // Brief delay on startup to ensure StatusNotifierWatcher is ready
     // This helps when autostarting at login before the panel is fully initialized
     std::thread::sleep(Duration::from_secs(2));
 
+    // Outer retry loop - restarts tray after suspend/resume
+    loop {
+        match run_tray_inner()? {
+            TrayExitReason::Quit => break,
+            TrayExitReason::SuspendResume => {
+                println!("Detected suspend/resume, restarting tray...");
+                // Brief delay before restarting to let D-Bus settle
+                std::thread::sleep(Duration::from_millis(500));
+                continue;
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// Inner implementation of the tray service
+/// Returns the reason for exit so the outer loop can decide whether to restart
+fn run_tray_inner() -> Result<TrayExitReason, String> {
     // Create lockfile to indicate tray is running
     crate::create_tray_lockfile();
 
@@ -445,8 +476,24 @@ pub fn run_tray() -> Result<(), String> {
     const CPU_SAMPLE_COUNT: usize = 10;
     let mut cpu_samples: VecDeque<f32> = VecDeque::with_capacity(CPU_SAMPLE_COUNT);
 
+    // Track time for suspend/resume detection
+    let mut loop_start = Instant::now();
+
     // Main loop
     loop {
+        // Detect suspend/resume by checking for time jumps
+        // If the sleep took much longer than expected (>5 seconds vs expected 16ms),
+        // we likely woke from suspend and should restart to recover D-Bus connections
+        let elapsed = loop_start.elapsed();
+        if elapsed > Duration::from_secs(5) {
+            println!("Time jump detected ({:?}), likely suspend/resume", elapsed);
+            handle.shutdown();
+            std::thread::sleep(Duration::from_millis(100));
+            crate::remove_tray_lockfile();
+            return Ok(TrayExitReason::SuspendResume);
+        }
+        loop_start = Instant::now();
+
         if should_quit.load(Ordering::SeqCst) {
             break;
         }
@@ -562,5 +609,5 @@ pub fn run_tray() -> Result<(), String> {
     // Clean up lockfile on exit
     crate::remove_tray_lockfile();
 
-    Ok(())
+    Ok(TrayExitReason::Quit)
 }
