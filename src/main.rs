@@ -19,21 +19,34 @@ use std::fs;
 use std::io::Write;
 use std::process::Command;
 
+/// Check if running inside a Flatpak sandbox
+fn is_flatpak() -> bool {
+    std::path::Path::new("/.flatpak-info").exists()
+}
+
+/// Get the app config directory, using host path in Flatpak
+fn app_config_dir() -> std::path::PathBuf {
+    if is_flatpak() {
+        // In Flatpak, use the exposed host config directory
+        dirs::home_dir()
+            .map(|h| h.join(".config/cosmic-runkat"))
+            .unwrap_or_else(|| std::path::PathBuf::from("/tmp/cosmic-runkat"))
+    } else {
+        // Native: use standard XDG config directory
+        dirs::config_dir()
+            .map(|d| d.join("cosmic-runkat"))
+            .unwrap_or_else(|| std::path::PathBuf::from("/tmp/cosmic-runkat"))
+    }
+}
+
 /// Get the path to the tray lockfile
-/// Uses config directory to work correctly in Flatpak sandboxes
 fn tray_lockfile_path() -> std::path::PathBuf {
-    dirs::config_dir()
-        .map(|d| d.join("cosmic-runkat"))
-        .unwrap_or_else(|| std::path::PathBuf::from("/tmp"))
-        .join("tray.lock")
+    app_config_dir().join("tray.lock")
 }
 
 /// Get the path to the GUI lockfile
 fn gui_lockfile_path() -> std::path::PathBuf {
-    dirs::config_dir()
-        .map(|d| d.join("cosmic-runkat"))
-        .unwrap_or_else(|| std::path::PathBuf::from("/tmp"))
-        .join("gui.lock")
+    app_config_dir().join("gui.lock")
 }
 
 fn print_help() {
@@ -125,12 +138,34 @@ fn cleanup_stale_lockfiles() {
     cleanup_single_lockfile(&tray_lockfile, "tray");
 }
 
+/// Get system boot time as seconds since Unix epoch
+fn get_boot_time() -> Option<u64> {
+    let stat = fs::read_to_string("/proc/stat").ok()?;
+    for line in stat.lines() {
+        if line.starts_with("btime ") {
+            return line.split_whitespace().nth(1)?.parse().ok();
+        }
+    }
+    None
+}
+
 /// Helper to clean up a single stale lockfile
 fn cleanup_single_lockfile(lockfile: &std::path::Path, name: &str) {
     if let Ok(metadata) = fs::metadata(lockfile) {
         if let Ok(modified) = metadata.modified() {
+            // Check if lockfile is from before the current boot
+            if let Some(boot_time) = get_boot_time() {
+                if let Ok(modified_unix) = modified.duration_since(std::time::UNIX_EPOCH) {
+                    if modified_unix.as_secs() < boot_time {
+                        let _ = fs::remove_file(lockfile);
+                        eprintln!("Cleaned up {} lockfile from previous boot", name);
+                        return;
+                    }
+                }
+            }
+
+            // Also check elapsed time (60 second threshold for same-boot stale files)
             if let Ok(elapsed) = modified.elapsed() {
-                // If lockfile is older than 60 seconds, it's from a dead process
                 if elapsed.as_secs() >= 60 {
                     let _ = fs::remove_file(lockfile);
                     eprintln!("Cleaned up stale {} lockfile", name);
@@ -158,11 +193,6 @@ pub fn create_gui_lockfile() {
 /// Remove the GUI lockfile when app exits
 pub fn remove_gui_lockfile() {
     let _ = fs::remove_file(gui_lockfile_path());
-}
-
-/// Check if running inside a Flatpak sandbox
-fn is_flatpak() -> bool {
-    std::path::Path::new("/.flatpak-info").exists()
 }
 
 /// Ensure autostart entry exists for the tray
