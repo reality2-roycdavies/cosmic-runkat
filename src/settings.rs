@@ -49,7 +49,7 @@ impl Application for SettingsApp {
     }
 
     fn header_center(&self) -> Vec<Element<'_, Self::Message>> {
-        vec![text::heading("RunKat Settings").into()]
+        vec![]
     }
 
     fn header_end(&self) -> Vec<Element<'_, Self::Message>> {
@@ -137,7 +137,7 @@ impl Application for SettingsApp {
         .width(Length::Fill)
         .height(Length::Fill)
         .center_x(Length::Fill)
-        .padding(16)
+        .padding(24)
         .into()
     }
 }
@@ -145,7 +145,7 @@ impl Application for SettingsApp {
 /// Run the settings application
 pub fn run_settings() -> cosmic::iced::Result {
     let settings = cosmic::app::Settings::default()
-        .size(cosmic::iced::Size::new(450.0, 400.0));
+        .size(cosmic::iced::Size::new(850.0, 400.0));
 
     cosmic::app::run::<SettingsApp>(settings, ())
 }

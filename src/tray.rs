@@ -347,7 +347,7 @@ impl Tray for RunkatTray {
         vec![
             StandardItem {
                 label: "Settings...".to_string(),
-                icon_name: "preferences-system".to_string(),
+                icon_name: "preferences-system-symbolic".to_string(),
                 activate: Box::new(|_| {
                     std::thread::spawn(|| {
                         let exe = std::env::current_exe().unwrap_or_default();
@@ -360,7 +360,7 @@ impl Tray for RunkatTray {
             MenuItem::Separator,
             StandardItem {
                 label: "Quit".to_string(),
-                icon_name: "application-exit".to_string(),
+                icon_name: "application-exit-symbolic".to_string(),
                 activate: Box::new(|tray: &mut Self| {
                     tray.should_quit.store(true, Ordering::SeqCst);
                 }),
