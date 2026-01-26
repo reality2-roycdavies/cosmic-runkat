@@ -67,6 +67,66 @@ fn get_theme_files_mtime() -> Option<std::time::SystemTime> {
     Some(accent_mtime.max(bg_mtime))
 }
 
+/// Parse a color from COSMIC theme RON format
+fn parse_color_from_ron(content: &str, color_name: &str) -> Option<(u8, u8, u8)> {
+    let search_pattern = format!("{}:", color_name);
+    let start_idx = content.find(&search_pattern)?;
+    let block_start = content[start_idx..].find('(')?;
+    let block_end = content[start_idx + block_start..].find(')')?;
+    let block = &content[start_idx + block_start..start_idx + block_start + block_end + 1];
+
+    let extract_float = |name: &str| -> Option<f32> {
+        let pattern = format!("{}: ", name);
+        let idx = block.find(&pattern)?;
+        let start = idx + pattern.len();
+        let end = block[start..].find(',')?;
+        block[start..start + end].trim().parse().ok()
+    };
+
+    let red = extract_float("red")?;
+    let green = extract_float("green")?;
+    let blue = extract_float("blue")?;
+
+    Some((
+        (red.clamp(0.0, 1.0) * 255.0) as u8,
+        (green.clamp(0.0, 1.0) * 255.0) as u8,
+        (blue.clamp(0.0, 1.0) * 255.0) as u8,
+    ))
+}
+
+/// Get theme color for the tray icon (foreground color from background.on)
+fn get_theme_color() -> (u8, u8, u8) {
+    let default_color = (200, 200, 200);
+
+    let theme_dir = match cosmic_theme_dir() {
+        Some(dir) => dir,
+        None => return default_color,
+    };
+
+    let bg_path = theme_dir.join("background");
+    if let Ok(content) = fs::read_to_string(&bg_path) {
+        parse_color_from_ron(&content, "on").unwrap_or(default_color)
+    } else {
+        default_color
+    }
+}
+
+/// Recolor an RGBA image to use the theme color
+/// Preserves alpha channel, replaces RGB with theme color
+fn recolor_image(img: &RgbaImage, color: (u8, u8, u8)) -> RgbaImage {
+    let (r, g, b) = color;
+    let mut result = img.clone();
+    for pixel in result.pixels_mut() {
+        if pixel[3] > 0 {
+            pixel[0] = r;
+            pixel[1] = g;
+            pixel[2] = b;
+            // Keep original alpha
+        }
+    }
+    result
+}
+
 /// Get the path to COSMIC's panel size config file
 fn cosmic_panel_size_path() -> Option<PathBuf> {
     host_cosmic_config_dir().map(|d| d.join("com.system76.CosmicPanel.Panel/v1/size"))
@@ -118,33 +178,24 @@ fn is_dark_mode() -> bool {
 }
 
 /// Load a digit sprite
-fn load_digit(digit: char, is_light: bool) -> Option<RgbaImage> {
-    let data: &[u8] = match (digit, is_light) {
-        ('0', false) => include_bytes!("../resources/digit-0.png"),
-        ('0', true) => include_bytes!("../resources/digit-0-light.png"),
-        ('1', false) => include_bytes!("../resources/digit-1.png"),
-        ('1', true) => include_bytes!("../resources/digit-1-light.png"),
-        ('2', false) => include_bytes!("../resources/digit-2.png"),
-        ('2', true) => include_bytes!("../resources/digit-2-light.png"),
-        ('3', false) => include_bytes!("../resources/digit-3.png"),
-        ('3', true) => include_bytes!("../resources/digit-3-light.png"),
-        ('4', false) => include_bytes!("../resources/digit-4.png"),
-        ('4', true) => include_bytes!("../resources/digit-4-light.png"),
-        ('5', false) => include_bytes!("../resources/digit-5.png"),
-        ('5', true) => include_bytes!("../resources/digit-5-light.png"),
-        ('6', false) => include_bytes!("../resources/digit-6.png"),
-        ('6', true) => include_bytes!("../resources/digit-6-light.png"),
-        ('7', false) => include_bytes!("../resources/digit-7.png"),
-        ('7', true) => include_bytes!("../resources/digit-7-light.png"),
-        ('8', false) => include_bytes!("../resources/digit-8.png"),
-        ('8', true) => include_bytes!("../resources/digit-8-light.png"),
-        ('9', false) => include_bytes!("../resources/digit-9.png"),
-        ('9', true) => include_bytes!("../resources/digit-9-light.png"),
-        ('%', false) => include_bytes!("../resources/digit-pct.png"),
-        ('%', true) => include_bytes!("../resources/digit-pct-light.png"),
+/// Load a digit sprite and recolor with theme color
+fn load_digit(digit: char, color: (u8, u8, u8)) -> Option<RgbaImage> {
+    let data: &[u8] = match digit {
+        '0' => include_bytes!("../resources/digit-0.png"),
+        '1' => include_bytes!("../resources/digit-1.png"),
+        '2' => include_bytes!("../resources/digit-2.png"),
+        '3' => include_bytes!("../resources/digit-3.png"),
+        '4' => include_bytes!("../resources/digit-4.png"),
+        '5' => include_bytes!("../resources/digit-5.png"),
+        '6' => include_bytes!("../resources/digit-6.png"),
+        '7' => include_bytes!("../resources/digit-7.png"),
+        '8' => include_bytes!("../resources/digit-8.png"),
+        '9' => include_bytes!("../resources/digit-9.png"),
+        '%' => include_bytes!("../resources/digit-pct.png"),
         _ => return None,
     };
-    image::load_from_memory(data).ok().map(|i| i.to_rgba8())
+    let img = image::load_from_memory(data).ok()?.to_rgba8();
+    Some(recolor_image(&img, color))
 }
 
 /// Composite a sprite onto a target image at the given position
@@ -199,36 +250,22 @@ impl RunkatTray {
         }
     }
 
-    /// Get the cat icon data for the current frame
+    /// Get the cat icon data for the current frame (always dark version, will be recolored)
     fn get_cat_data(&self) -> &'static [u8] {
         if self.is_sleeping {
-            if self.dark_mode {
-                include_bytes!("../resources/cat-sleep-light.png")
-            } else {
-                include_bytes!("../resources/cat-sleep.png")
-            }
+            include_bytes!("../resources/cat-sleep.png")
         } else {
-            match (self.current_frame, self.dark_mode) {
-                (0, true) => include_bytes!("../resources/cat-run-0-light.png"),
-                (0, false) => include_bytes!("../resources/cat-run-0.png"),
-                (1, true) => include_bytes!("../resources/cat-run-1-light.png"),
-                (1, false) => include_bytes!("../resources/cat-run-1.png"),
-                (2, true) => include_bytes!("../resources/cat-run-2-light.png"),
-                (2, false) => include_bytes!("../resources/cat-run-2.png"),
-                (3, true) => include_bytes!("../resources/cat-run-3-light.png"),
-                (3, false) => include_bytes!("../resources/cat-run-3.png"),
-                (4, true) => include_bytes!("../resources/cat-run-4-light.png"),
-                (4, false) => include_bytes!("../resources/cat-run-4.png"),
-                (5, true) => include_bytes!("../resources/cat-run-5-light.png"),
-                (5, false) => include_bytes!("../resources/cat-run-5.png"),
-                (6, true) => include_bytes!("../resources/cat-run-6-light.png"),
-                (6, false) => include_bytes!("../resources/cat-run-6.png"),
-                (7, true) => include_bytes!("../resources/cat-run-7-light.png"),
-                (7, false) => include_bytes!("../resources/cat-run-7.png"),
-                (8, true) => include_bytes!("../resources/cat-run-8-light.png"),
-                (8, false) => include_bytes!("../resources/cat-run-8.png"),
-                (9, true) => include_bytes!("../resources/cat-run-9-light.png"),
-                (9, false) => include_bytes!("../resources/cat-run-9.png"),
+            match self.current_frame {
+                0 => include_bytes!("../resources/cat-run-0.png"),
+                1 => include_bytes!("../resources/cat-run-1.png"),
+                2 => include_bytes!("../resources/cat-run-2.png"),
+                3 => include_bytes!("../resources/cat-run-3.png"),
+                4 => include_bytes!("../resources/cat-run-4.png"),
+                5 => include_bytes!("../resources/cat-run-5.png"),
+                6 => include_bytes!("../resources/cat-run-6.png"),
+                7 => include_bytes!("../resources/cat-run-7.png"),
+                8 => include_bytes!("../resources/cat-run-8.png"),
+                9 => include_bytes!("../resources/cat-run-9.png"),
                 _ => include_bytes!("../resources/cat-run-0.png"),
             }
         }
@@ -236,9 +273,13 @@ impl RunkatTray {
 
     /// Build the composite icon with cat and optionally CPU percentage beside it
     fn build_icon(&self) -> Option<RgbaImage> {
-        // Load cat frame
+        // Get theme color for recoloring sprites
+        let theme_color = get_theme_color();
+
+        // Load cat frame and recolor with theme color
         let cat_data = self.get_cat_data();
-        let cat = image::load_from_memory(cat_data).ok()?.to_rgba8();
+        let cat_raw = image::load_from_memory(cat_data).ok()?.to_rgba8();
+        let cat = recolor_image(&cat_raw, theme_color);
 
         // Only show percentage if user enabled AND panel is medium or larger AND cat is awake
         let should_show_pct = self.show_percentage && self.panel_medium_or_larger && !self.is_sleeping;
@@ -280,17 +321,17 @@ impl RunkatTray {
         let text_x = CAT_SIZE + CAT_PCT_SPACING;
         let text_y = (CAT_SIZE - DIGIT_HEIGHT) / 2; // Center vertically
 
-        // Composite each digit
+        // Composite each digit (recolored with theme color)
         let mut x = text_x;
         for ch in cpu_str.chars() {
-            if let Some(digit_sprite) = load_digit(ch, self.dark_mode) {
+            if let Some(digit_sprite) = load_digit(ch, theme_color) {
                 composite_sprite(&mut icon, &digit_sprite, x, text_y);
                 x += char_spacing;
             }
         }
 
         // Add % symbol
-        if let Some(pct_sprite) = load_digit('%', self.dark_mode) {
+        if let Some(pct_sprite) = load_digit('%', theme_color) {
             composite_sprite(&mut icon, &pct_sprite, x, text_y);
         }
 
