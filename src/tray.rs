@@ -42,9 +42,29 @@ fn host_cosmic_config_dir() -> Option<PathBuf> {
     dirs::home_dir().map(|h| h.join(".config/cosmic"))
 }
 
-/// Get the path to COSMIC's theme config file
+/// Get the path to COSMIC's theme mode config file
 fn cosmic_theme_path() -> Option<PathBuf> {
     host_cosmic_config_dir().map(|d| d.join("com.system76.CosmicTheme.Mode/v1/is_dark"))
+}
+
+/// Get the path to the active theme directory
+fn cosmic_theme_dir() -> Option<PathBuf> {
+    let is_dark = is_dark_mode();
+    let theme_name = if is_dark { "Dark" } else { "Light" };
+    host_cosmic_config_dir().map(|d| d.join(format!("com.system76.CosmicTheme.{}/v1", theme_name)))
+}
+
+/// Get modification time of theme color files for change detection
+fn get_theme_files_mtime() -> Option<std::time::SystemTime> {
+    let theme_dir = cosmic_theme_dir()?;
+    let accent_path = theme_dir.join("accent");
+    let bg_path = theme_dir.join("background");
+
+    // Return the most recent modification time of either file
+    let accent_mtime = fs::metadata(&accent_path).ok()?.modified().ok()?;
+    let bg_mtime = fs::metadata(&bg_path).ok()?.modified().ok()?;
+
+    Some(accent_mtime.max(bg_mtime))
 }
 
 /// Get the path to COSMIC's panel size config file
@@ -446,6 +466,10 @@ fn run_tray_inner() -> Result<TrayExitReason, String> {
                     let _ = w.watch(watch_dir, RecursiveMode::NonRecursive);
                 }
             }
+            // Watch theme color files directory (accent, background)
+            if let Some(theme_dir) = cosmic_theme_dir() {
+                let _ = w.watch(&theme_dir, RecursiveMode::NonRecursive);
+            }
             // Watch panel config directory
             if let Some(panel_path) = cosmic_panel_size_path() {
                 if let Some(watch_dir) = panel_path.parent() {
@@ -464,6 +488,7 @@ fn run_tray_inner() -> Result<TrayExitReason, String> {
     // Track current config for detecting changes
     let mut config = config;
     let mut last_config_check = Instant::now();
+    let mut tracked_theme_mtime = get_theme_files_mtime();
     const CONFIG_CHECK_INTERVAL: Duration = Duration::from_millis(500);
 
     // Animation state
@@ -556,6 +581,12 @@ fn run_tray_inner() -> Result<TrayExitReason, String> {
                 || (new_config.sleep_threshold - config.sleep_threshold).abs() > 0.1
             {
                 config = new_config;
+                config_changed = true;
+            }
+            // Also check if theme color files have changed (robust backup to file watcher)
+            let new_mtime = get_theme_files_mtime();
+            if new_mtime != tracked_theme_mtime {
+                tracked_theme_mtime = new_mtime;
                 config_changed = true;
             }
         }
