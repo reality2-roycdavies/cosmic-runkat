@@ -14,10 +14,10 @@ pub struct Config {
     /// Minimum CPU percentage below which the cat sleeps (default: 5%)
     pub sleep_threshold: f32,
 
-    /// Maximum animation speed in frames per second (default: 10)
+    /// Maximum animation speed in frames per second (default: 15)
     pub max_fps: f32,
 
-    /// Minimum animation speed in frames per second (default: 1)
+    /// Minimum animation speed in frames per second (default: 2)
     pub min_fps: f32,
 
     /// Show CPU percentage on the tray icon (default: true)
@@ -75,11 +75,6 @@ impl Config {
         let normalized = (cpu_percent / 100.0).clamp(0.0, 1.0);
         self.min_fps + normalized * (self.max_fps - self.min_fps)
     }
-
-    /// Check if the cat should be sleeping (CPU below threshold)
-    pub fn should_sleep(&self, cpu_percent: f32) -> bool {
-        cpu_percent < self.sleep_threshold
-    }
 }
 
 #[cfg(test)]
@@ -103,12 +98,12 @@ mod tests {
     fn test_sleep_threshold() {
         let config = Config::default();
 
-        // Below threshold = sleeping
-        assert!(config.should_sleep(3.0));
-        assert!(config.should_sleep(4.9));
+        // Below threshold = sleeping (cpu < sleep_threshold)
+        assert!(3.0 < config.sleep_threshold);
+        assert!(4.9 < config.sleep_threshold);
 
         // At or above threshold = not sleeping
-        assert!(!config.should_sleep(5.0));
-        assert!(!config.should_sleep(50.0));
+        assert!(!(5.0 < config.sleep_threshold));
+        assert!(!(50.0 < config.sleep_threshold));
     }
 }

@@ -229,8 +229,6 @@ pub struct RunkatTray {
     cpu_percent: f32,
     /// Is the cat sleeping?
     is_sleeping: bool,
-    /// Dark mode state
-    dark_mode: bool,
     /// Show percentage on icon (user preference)
     show_percentage: bool,
     /// Panel is medium size or larger
@@ -244,7 +242,6 @@ impl RunkatTray {
             current_frame: 0,
             cpu_percent: 0.0,
             is_sleeping: true,
-            dark_mode: is_dark_mode(),
             show_percentage,
             panel_medium_or_larger: is_panel_medium_or_larger(),
         }
@@ -639,18 +636,15 @@ fn run_tray_inner() -> Result<TrayExitReason, String> {
                 tray.cpu_percent = display_cpu;  // Use rounded value for display
                 tray.is_sleeping = is_sleeping;
                 if config_changed {
-                    tray.dark_mode = is_dark_mode();
                     tray.panel_medium_or_larger = is_panel_medium_or_larger();
                     tray.show_percentage = config.show_percentage;
                 }
             });
         } else if last_config_check.elapsed() < Duration::from_millis(20) {
-            // Just did a config check - also check if theme/panel changed without config change
-            let new_dark = is_dark_mode();
+            // Just did a config check - also check if panel size changed without config change
             let new_panel = is_panel_medium_or_larger();
             handle.update(|tray| {
-                if tray.dark_mode != new_dark || tray.panel_medium_or_larger != new_panel {
-                    tray.dark_mode = new_dark;
+                if tray.panel_medium_or_larger != new_panel {
                     tray.panel_medium_or_larger = new_panel;
                 }
             });

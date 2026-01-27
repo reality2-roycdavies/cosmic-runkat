@@ -30,11 +30,6 @@ impl CpuMonitor {
         }
     }
 
-    /// Get a receiver for CPU percentage updates
-    pub fn subscribe(&self) -> watch::Receiver<f32> {
-        self.rx.clone()
-    }
-
     /// Start the monitoring thread
     ///
     /// The thread samples CPU usage at the specified interval and sends
