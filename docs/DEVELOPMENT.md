@@ -54,24 +54,28 @@ fn icon_pixmap(&self) -> Vec<ksni::Icon> {
 
 ### Animation Frame Selection
 
-We embed all animation frames at compile time and select based on state:
+We embed all animation frames at compile time and select based on state. A single set of sprites is used and dynamically recolored to match the COSMIC theme:
 
 ```rust
 fn get_cat_data(&self) -> &'static [u8] {
     if self.is_sleeping {
-        if self.dark_mode {
-            include_bytes!("../resources/cat-sleep-light.png")
-        } else {
-            include_bytes!("../resources/cat-sleep.png")
-        }
+        include_bytes!("../resources/cat-sleep.png")
     } else {
-        match (self.current_frame, self.dark_mode) {
-            (0, true) => include_bytes!("../resources/cat-run-0-light.png"),
-            (0, false) => include_bytes!("../resources/cat-run-0.png"),
+        match self.current_frame {
+            0 => include_bytes!("../resources/cat-run-0.png"),
+            1 => include_bytes!("../resources/cat-run-1.png"),
             // ... 10 frames total
+            _ => include_bytes!("../resources/cat-run-0.png"),
         }
     }
 }
+```
+
+The sprites are then recolored using the theme's foreground color:
+
+```rust
+let cat_raw = image::load_from_memory(cat_data).ok()?.to_rgba8();
+let cat = recolor_image(&cat_raw, theme_color);
 ```
 
 ---
@@ -132,7 +136,7 @@ fn build_icon(&self) -> Option<RgbaImage> {
 
 ### Digit Sprites
 
-We created simple 8x12 pixel digit sprites in both dark and light variants. Blue color (50, 150, 255) was chosen for good visibility on both dark and light panel backgrounds.
+We created simple 8x12 pixel digit sprites. These are dynamically recolored at runtime using the COSMIC theme's foreground color (read from the `background.on` theme value), ensuring they always match the current theme.
 
 ---
 
@@ -363,7 +367,7 @@ pub fn run_tray() -> Result<(), String> {
 | `systemstat` | 0.2 | CPU monitoring |
 | `libcosmic` | git | COSMIC toolkit for settings app |
 | `notify` | 6 | File system watching |
-| `dirs` | 5 | XDG directory paths |
+| `dirs` | 6 | XDG directory paths |
 
 ### COSMIC Desktop Paths
 
@@ -422,7 +426,7 @@ Flathub requires specific app ID formats for code hosting platforms:
 - **GitHub**: `io.github.USERNAME.REPONAME` (4 components)
 - **GitLab**: `io.gitlab.USERNAME.REPONAME`
 
-Our app ID: `io.github.reality2-roycdavies.cosmic-runkat`
+Our app ID: `io.github.reality2_roycdavies.cosmic-runkat`
 
 ### Manifest Structure
 

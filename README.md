@@ -56,7 +56,7 @@ The emerging model of AI-assisted development:
 - **CPU-Based Speed**: The cat runs faster when CPU usage is higher
 - **Sleep Mode**: Cat curls up and sleeps when CPU drops below a configurable threshold
 - **CPU Percentage Display**: Optional percentage shown beside the cat (hidden when sleeping)
-- **Theme-Aware**: Automatically adapts icons to dark/light mode
+- **Theme-Aware**: Dynamically recolors icons using COSMIC theme colors
 - **Panel-Size Aware**: Percentage only shown on medium or larger panels
 - **Instant Updates**: Uses inotify file watching for immediate theme/config changes
 - **Settings App**: libcosmic-based settings window for configuration

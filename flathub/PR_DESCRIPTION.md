@@ -23,7 +23,7 @@ This application was built specifically for the COSMIC desktop environment using
 
 ## Technical Notes
 
-- **Runtime:** org.freedesktop.Platform 24.08
+- **Runtime:** org.freedesktop.Platform 25.08
 - **Build:** Rust (cargo) with offline build via cargo-sources.json
 - **Desktop:** COSMIC only (will not function on other desktop environments)
 
