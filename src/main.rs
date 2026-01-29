@@ -10,32 +10,41 @@
 //! - No arguments: Opens settings (starts tray first if not already running)
 
 mod config;
+mod constants;
 mod cpu;
+mod error;
+mod paths;
 mod settings;
+mod theme;
 mod tray;
 
+use constants::*;
+use paths::{app_config_dir, is_flatpak};
 use std::env;
 use std::fs;
 use std::io::Write;
 use std::process::Command;
 
-/// Check if running inside a Flatpak sandbox
-fn is_flatpak() -> bool {
-    std::path::Path::new("/.flatpak-info").exists()
-}
-
-/// Get the app config directory, using host path in Flatpak
-fn app_config_dir() -> std::path::PathBuf {
+/// Spawn tray in background (Flatpak-aware)
+///
+/// In Flatpak, uses flatpak-spawn to launch the app on the host.
+/// In native environments, spawns directly.
+fn spawn_tray_background() -> Result<(), std::io::Error> {
     if is_flatpak() {
-        // In Flatpak, use the exposed host config directory
-        dirs::home_dir()
-            .map(|h| h.join(".config/cosmic-runkat"))
-            .unwrap_or_else(|| std::path::PathBuf::from("/tmp/cosmic-runkat"))
+        // In Flatpak, must use flatpak-spawn to launch on host
+        Command::new("flatpak-spawn")
+            .args([
+                "--host",
+                "flatpak",
+                "run",
+                "io.github.reality2_roycdavies.cosmic-runkat",
+                "--tray",
+            ])
+            .spawn()
+            .map(|_| ())
     } else {
-        // Native: use standard XDG config directory
-        dirs::config_dir()
-            .map(|d| d.join("cosmic-runkat"))
-            .unwrap_or_else(|| std::path::PathBuf::from("/tmp/cosmic-runkat"))
+        // Native: spawn directly
+        Command::new(env::current_exe()?).arg("--tray").spawn().map(|_| ())
     }
 }
 
@@ -70,21 +79,48 @@ fn print_version() {
     println!("cosmic-runkat {}", env!("CARGO_PKG_VERSION"));
 }
 
+/// Check if a process is actually running (non-Flatpak only)
+///
+/// In Flatpak, PID namespaces prevent us from checking /proc,
+/// so we return true (assume running if lockfile exists).
+fn is_process_running(pid: u32) -> bool {
+    if is_flatpak() {
+        // Can't check in Flatpak due to PID namespaces
+        return true;
+    }
+
+    std::path::Path::new(&format!("/proc/{}", pid)).exists()
+}
+
 /// Check if a lockfile indicates an active process
 ///
-/// Checks existence and modification time (to detect stale locks from crashes/restarts)
+/// Checks PID existence (non-Flatpak) and modification time.
+/// This prevents false "already running" errors from stale lockfiles.
 fn is_lockfile_active(path: &std::path::Path) -> bool {
-    if let Ok(metadata) = fs::metadata(path) {
-        if let Ok(modified) = metadata.modified() {
-            if let Ok(elapsed) = modified.elapsed() {
-                // If lockfile was modified less than 60 seconds ago, process is likely running
-                return elapsed.as_secs() < 60;
+    let metadata = match fs::metadata(path) {
+        Ok(m) => m,
+        Err(_) => return false,
+    };
+
+    // Read PID from lockfile
+    if let Ok(content) = fs::read_to_string(path) {
+        if let Ok(pid) = content.trim().parse::<u32>() {
+            // Check if process actually exists (non-Flatpak only)
+            if !is_process_running(pid) {
+                tracing::debug!("Lockfile exists but process {} not running", pid);
+                return false;
             }
         }
-        // If we can't check time, assume NOT running (conservative approach)
-        // This prevents stale lockfiles from blocking new instances
-        return false;
     }
+
+    // Check modification time
+    if let Ok(modified) = metadata.modified() {
+        if let Ok(elapsed) = modified.elapsed() {
+            return elapsed < LOCKFILE_STALE_THRESHOLD;
+        }
+    }
+
+    // If we can't verify, assume NOT running (conservative)
     false
 }
 
@@ -164,9 +200,9 @@ fn cleanup_single_lockfile(lockfile: &std::path::Path, name: &str) {
                 }
             }
 
-            // Also check elapsed time (60 second threshold for same-boot stale files)
+            // Also check elapsed time for same-boot stale files
             if let Ok(elapsed) = modified.elapsed() {
-                if elapsed.as_secs() >= 60 {
+                if elapsed >= LOCKFILE_STALE_THRESHOLD {
                     let _ = fs::remove_file(lockfile);
                     eprintln!("Cleaned up stale {} lockfile", name);
                 }
@@ -235,6 +271,16 @@ X-GNOME-Autostart-enabled=true
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Initialize structured logging
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::from_default_env()
+                .add_directive("cosmic_runkat=info".parse().unwrap()),
+        )
+        .init();
+
+    tracing::info!("Starting cosmic-runkat v{}", env!("CARGO_PKG_VERSION"));
+
     let args: Vec<String> = env::args().collect();
 
     // Parse command line arguments
@@ -254,13 +300,30 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                 // Check if tray is already running
                 if is_tray_running() {
+                    tracing::info!("RunKat tray is already running");
                     println!("RunKat tray is already running.");
                     return Ok(());
                 }
 
+                tracing::info!("Starting cosmic-runkat tray");
                 println!("Starting cosmic-runkat tray...");
                 ensure_autostart();
-                tray::run_tray().map_err(|e| e.into())
+
+                match tray::run_tray() {
+                    Ok(_) => Ok(()),
+                    Err(e) => {
+                        tracing::error!("Tray error: {}", e);
+                        eprintln!("\n❌ cosmic-runkat tray failed to start:");
+                        eprintln!("   {}", e);
+                        eprintln!("\n💡 Troubleshooting tips:");
+                        eprintln!("   - Ensure COSMIC panel is running");
+                        eprintln!("   - Try: systemctl --user restart cosmic-panel");
+                        eprintln!(
+                            "   - Check logs: RUST_LOG=cosmic_runkat=debug cosmic-runkat --tray"
+                        );
+                        Err(e.into())
+                    }
+                }
             }
             "-s" | "--settings" => {
                 // Clean up any stale lockfiles from previous sessions
@@ -287,22 +350,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         cleanup_stale_lockfiles();
 
         if is_gui_running() {
+            tracing::info!("Settings window is already open");
             println!("Settings window is already open.");
             return Ok(());
         }
         if !is_tray_running() {
+            tracing::info!("Starting cosmic-runkat tray in background");
             println!("Starting cosmic-runkat tray in background...");
-            // Start tray in background
-            if let Err(e) =
-                Command::new(env::current_exe().unwrap_or_else(|_| "cosmic-runkat".into()))
-                    .arg("--tray")
-                    .spawn()
-            {
+            // Start tray in background (Flatpak-aware)
+            if let Err(e) = spawn_tray_background() {
+                tracing::error!("Failed to start tray: {}", e);
                 eprintln!("Warning: Failed to start tray: {}", e);
             }
             // Give tray time to initialize
             std::thread::sleep(std::time::Duration::from_millis(500));
         }
+        tracing::info!("Opening settings window");
         println!("Opening settings...");
         create_gui_lockfile();
         let result = settings::run_settings().map_err(|e| e.into());

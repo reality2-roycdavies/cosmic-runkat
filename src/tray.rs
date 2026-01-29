@@ -4,35 +4,21 @@
 //! The animation speed varies based on CPU usage.
 //! CPU percentage is dynamically composited onto the icon.
 
+use crate::config::Config;
+use crate::constants::*;
+use crate::cpu::CpuMonitor;
+use crate::theme;
 use image::RgbaImage;
 use ksni::Tray;
-// Import the blocking TrayMethods trait for sync spawn/disable_dbus_name
-use ksni::blocking::TrayMethods as BlockingTrayMethods;
-use notify::{Config as NotifyConfig, RecommendedWatcher, RecursiveMode, Watcher};
+// Using native async API (Phase 3)
+use ksni::TrayMethods;
 use std::collections::VecDeque;
 use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc::channel;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
-
-use crate::config::Config;
-use crate::cpu::CpuMonitor;
-
-/// Number of animation frames in the run cycle
-const RUN_FRAMES: u8 = 10;
-
-/// Cat size (square)
-const CAT_SIZE: u32 = 32;
-
-/// Digit size (width x height)
-const DIGIT_WIDTH: u32 = 8;
-const DIGIT_HEIGHT: u32 = 12;
-
-/// Spacing between cat and percentage
-const CAT_PCT_SPACING: u32 = 2;
+use tokio::time::{interval, Duration, Instant};
 
 /// Get the host's COSMIC config directory
 /// In Flatpak, dirs::config_dir() returns the sandboxed config, not the host's
@@ -68,69 +54,54 @@ fn get_theme_files_mtime() -> Option<std::time::SystemTime> {
 }
 
 /// Parse a color from COSMIC theme RON format
-fn parse_color_from_ron(content: &str, color_name: &str) -> Option<(u8, u8, u8)> {
-    // Basic parser for COSMIC theme RON
-    // Looks for `color_name: ( red: X, green: Y, blue: Z ... )`
-
-    // Find "color_name:"
-    let key = format!("{}:", color_name);
-    let rest = content.split(&key).nth(1)?;
-
-    // Find the content inside the next parenthesis group (...)
-    let start = rest.find('(')?;
-    let end = rest[start..].find(')')?;
-    let block = &rest[start + 1..start + end]; // content inside ( )
-
-    let extract = |name: &str| -> Option<f32> {
-        // Look for "name: value" or "name:value"
-        let name_key = format!("{}:", name);
-        let val_part = block.split(&name_key).nth(1)?;
-        // Take until comma or end
-        let val_str = val_part.split(',').next()?.trim();
-        val_str.parse().ok()
-    };
-
-    let r = extract("red")?;
-    let g = extract("green")?;
-    let b = extract("blue")?;
-
-    Some((
-        (r.clamp(0.0, 1.0) * 255.0) as u8,
-        (g.clamp(0.0, 1.0) * 255.0) as u8,
-        (b.clamp(0.0, 1.0) * 255.0) as u8,
-    ))
+/// Get theme color for the tray icon (uses theme module)
+fn get_theme_color() -> (u8, u8, u8) {
+    theme::get_cosmic_theme_colors().foreground
 }
 
-/// Get theme color for the tray icon (foreground color from background.on)
-fn get_theme_color() -> (u8, u8, u8) {
-    let default_color = (200, 200, 200);
+/// Create a fallback icon when resources fail to load
+///
+/// Generates a simple filled circle as a minimal tray icon.
+/// Used as graceful degradation when sprite files cannot be loaded.
+fn create_fallback_icon(size: u32, color: (u8, u8, u8)) -> RgbaImage {
+    let mut img = RgbaImage::new(size, size);
+    let (r, g, b) = color;
 
-    let theme_dir = match cosmic_theme_dir() {
-        Some(dir) => dir,
-        None => return default_color,
-    };
+    // Draw a simple filled circle
+    let center = size as f32 / 2.0;
+    let radius = size as f32 / 2.5;
 
-    let bg_path = theme_dir.join("background");
-    if let Ok(content) = fs::read_to_string(&bg_path) {
-        parse_color_from_ron(&content, "on").unwrap_or(default_color)
-    } else {
-        default_color
+    for (x, y, pixel) in img.enumerate_pixels_mut() {
+        let dx = x as f32 - center;
+        let dy = y as f32 - center;
+        let dist = (dx * dx + dy * dy).sqrt();
+
+        if dist <= radius {
+            *pixel = image::Rgba([r, g, b, 255]);
+        }
     }
+
+    img
 }
 
 /// Recolor an RGBA image to use the theme color
-/// Preserves alpha channel, replaces RGB with theme color
+///
+/// Preserves alpha channel, replaces RGB with theme color.
+/// Optimized to avoid filtering overhead by checking alpha inline.
 fn recolor_image(img: &RgbaImage, color: (u8, u8, u8)) -> RgbaImage {
     let (r, g, b) = color;
-    let mut result = img.to_owned();
-    result
-        .pixels_mut()
-        .filter(|pixel| pixel[3] > 0)
-        .for_each(|pixel| {
+    let mut result = img.clone(); // More explicit than to_owned()
+
+    // Mutate in place - more efficient without intermediate filter iterator
+    for pixel in result.pixels_mut() {
+        if pixel[3] > 0 {
+            // Only recolor non-transparent pixels
             pixel[0] = r;
             pixel[1] = g;
             pixel[2] = b;
-        });
+        }
+    }
+
     result
 }
 
@@ -190,27 +161,52 @@ fn is_dark_mode() -> bool {
 }
 
 /// Composite a sprite onto a target image at the given position
+///
+/// Skips fully transparent pixels for performance.
+/// Boundary checks prevent panics when sprite extends beyond target.
 fn composite_sprite(target: &mut RgbaImage, sprite: &RgbaImage, x: u32, y: u32) {
+    let target_width = target.width();
+    let target_height = target.height();
+
     for (sx, sy, pixel) in sprite.enumerate_pixels() {
+        // Skip fully transparent pixels early
+        if pixel[3] == 0 {
+            continue;
+        }
+
         let tx = x + sx;
         let ty = y + sy;
-        if tx < target.width() && ty < target.height() && pixel[3] > 0 {
+
+        // Bounds check
+        if tx < target_width && ty < target_height {
             target.put_pixel(tx, ty, *pixel);
         }
     }
 }
 
 /// Cache for loaded image resources to avoid repeated decoding
+///
+/// Stores both original sprites and recolored versions. The recolored
+/// cache is updated only when the theme color changes, avoiding repeated
+/// recoloring operations in the render loop.
 struct Resources {
-    cat_frames: Vec<RgbaImage>,
-    cat_sleep: RgbaImage,
-    digits: std::collections::HashMap<char, RgbaImage>,
+    // Original sprites (never modified after load)
+    cat_frames_original: Vec<RgbaImage>,
+    cat_sleep_original: RgbaImage,
+    digits_original: std::collections::HashMap<char, RgbaImage>,
+
+    // Cached recolored sprites (updated only on theme change)
+    last_theme_color: Option<(u8, u8, u8)>,
+    cat_frames_colored: Vec<RgbaImage>,
+    cat_sleep_colored: RgbaImage,
+    digits_colored: std::collections::HashMap<char, RgbaImage>,
 }
 
 impl std::fmt::Debug for Resources {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Resources")
-            .field("cat_frames", &self.cat_frames.len())
+            .field("cat_frames", &self.cat_frames_original.len())
+            .field("cached_color", &self.last_theme_color)
             .finish()
     }
 }
@@ -221,9 +217,9 @@ impl Resources {
             image::load_from_memory(data).ok().map(|i| i.to_rgba8())
         };
 
-        let cat_sleep = load_img(include_bytes!("../resources/cat-sleep.png"))?;
+        let cat_sleep_original = load_img(include_bytes!("../resources/cat-sleep.png"))?;
 
-        let cat_frames = vec![
+        let cat_frames_original = vec![
             load_img(include_bytes!("../resources/cat-run-0.png"))?,
             load_img(include_bytes!("../resources/cat-run-1.png"))?,
             load_img(include_bytes!("../resources/cat-run-2.png"))?,
@@ -236,24 +232,101 @@ impl Resources {
             load_img(include_bytes!("../resources/cat-run-9.png"))?,
         ];
 
-        let mut digits = std::collections::HashMap::new();
-        digits.insert('0', load_img(include_bytes!("../resources/digit-0.png"))?);
-        digits.insert('1', load_img(include_bytes!("../resources/digit-1.png"))?);
-        digits.insert('2', load_img(include_bytes!("../resources/digit-2.png"))?);
-        digits.insert('3', load_img(include_bytes!("../resources/digit-3.png"))?);
-        digits.insert('4', load_img(include_bytes!("../resources/digit-4.png"))?);
-        digits.insert('5', load_img(include_bytes!("../resources/digit-5.png"))?);
-        digits.insert('6', load_img(include_bytes!("../resources/digit-6.png"))?);
-        digits.insert('7', load_img(include_bytes!("../resources/digit-7.png"))?);
-        digits.insert('8', load_img(include_bytes!("../resources/digit-8.png"))?);
-        digits.insert('9', load_img(include_bytes!("../resources/digit-9.png"))?);
-        digits.insert('%', load_img(include_bytes!("../resources/digit-pct.png"))?);
+        let mut digits_original = std::collections::HashMap::new();
+        digits_original.insert('0', load_img(include_bytes!("../resources/digit-0.png"))?);
+        digits_original.insert('1', load_img(include_bytes!("../resources/digit-1.png"))?);
+        digits_original.insert('2', load_img(include_bytes!("../resources/digit-2.png"))?);
+        digits_original.insert('3', load_img(include_bytes!("../resources/digit-3.png"))?);
+        digits_original.insert('4', load_img(include_bytes!("../resources/digit-4.png"))?);
+        digits_original.insert('5', load_img(include_bytes!("../resources/digit-5.png"))?);
+        digits_original.insert('6', load_img(include_bytes!("../resources/digit-6.png"))?);
+        digits_original.insert('7', load_img(include_bytes!("../resources/digit-7.png"))?);
+        digits_original.insert('8', load_img(include_bytes!("../resources/digit-8.png"))?);
+        digits_original.insert('9', load_img(include_bytes!("../resources/digit-9.png"))?);
+        digits_original.insert('%', load_img(include_bytes!("../resources/digit-pct.png"))?);
 
+        // Clone originals for initial colored cache (will be updated on first theme load)
         Some(Self {
-            cat_frames,
-            cat_sleep,
-            digits,
+            cat_frames_original: cat_frames_original.clone(),
+            cat_sleep_original: cat_sleep_original.clone(),
+            digits_original: digits_original.clone(),
+            last_theme_color: None,
+            cat_frames_colored: cat_frames_original,
+            cat_sleep_colored: cat_sleep_original,
+            digits_colored: digits_original,
         })
+    }
+
+    /// Load resources with fallback on failure
+    ///
+    /// Returns minimal fallback resources if sprite loading fails,
+    /// ensuring the tray can always start even if resources are corrupted.
+    fn load_or_fallback() -> Self {
+        match Self::load() {
+            Some(resources) => {
+                tracing::debug!("Loaded sprite resources successfully");
+                resources
+            }
+            None => {
+                tracing::error!("Failed to load sprite resources, using fallback");
+                Self::create_fallback()
+            }
+        }
+    }
+
+    /// Create minimal fallback resources
+    fn create_fallback() -> Self {
+        let default_color = (200, 200, 200);
+        let fallback_icon = create_fallback_icon(CAT_SIZE, default_color);
+
+        Self {
+            cat_frames_original: vec![fallback_icon.clone(); RUN_FRAMES as usize],
+            cat_sleep_original: fallback_icon.clone(),
+            digits_original: std::collections::HashMap::new(), // No digits in fallback
+            last_theme_color: Some(default_color),
+            cat_frames_colored: vec![fallback_icon.clone(); RUN_FRAMES as usize],
+            cat_sleep_colored: fallback_icon.clone(),
+            digits_colored: std::collections::HashMap::new(),
+        }
+    }
+
+    /// Update cached recolored images if theme changed
+    ///
+    /// Only recolors sprites when theme color actually changes.
+    /// This is called from the main loop when a theme change is detected.
+    fn update_colors(&mut self, new_color: (u8, u8, u8)) {
+        // Skip recoloring if theme color hasn't changed
+        if self.last_theme_color == Some(new_color) {
+            return;
+        }
+
+        // Recolor all sprites with new theme color
+        self.cat_frames_colored =
+            self.cat_frames_original.iter().map(|img| recolor_image(img, new_color)).collect();
+
+        self.cat_sleep_colored = recolor_image(&self.cat_sleep_original, new_color);
+
+        self.digits_colored = self
+            .digits_original
+            .iter()
+            .map(|(ch, img)| (*ch, recolor_image(img, new_color)))
+            .collect();
+
+        self.last_theme_color = Some(new_color);
+    }
+
+    /// Get colored cat frame (uses cache, no recoloring)
+    fn get_cat_frame(&self, frame: u8, sleeping: bool) -> &RgbaImage {
+        if sleeping {
+            &self.cat_sleep_colored
+        } else {
+            &self.cat_frames_colored[frame as usize % self.cat_frames_colored.len()]
+        }
+    }
+
+    /// Get colored digit sprite (uses cache, no recoloring)
+    fn get_digit(&self, ch: char) -> Option<&RgbaImage> {
+        self.digits_colored.get(&ch)
     }
 }
 
@@ -286,31 +359,32 @@ pub struct RunkatTray {
 }
 
 impl RunkatTray {
-    pub fn new(should_quit: Arc<AtomicBool>, show_percentage: bool) -> Option<Self> {
-        Some(Self {
+    pub fn new(should_quit: Arc<AtomicBool>, show_percentage: bool) -> Self {
+        // Use load_or_fallback to ensure we always succeed
+        let mut resources = Resources::load_or_fallback();
+
+        // Initialize with current theme colors
+        let initial_color = get_theme_color();
+        resources.update_colors(initial_color);
+
+        Self {
             should_quit,
             current_frame: 0,
             cpu_percent: 0.0,
             is_sleeping: true,
             show_percentage,
             panel_medium_or_larger: is_panel_medium_or_larger(),
-            resources: Resources::load()?,
-        })
+            resources,
+        }
     }
 
     /// Build the composite icon with cat and optionally CPU percentage beside it
+    ///
+    /// Uses cached recolored sprites for performance. Theme color updates happen
+    /// in the main loop via `update_colors()`, not during rendering.
     fn build_icon(&self) -> Option<RgbaImage> {
-        // Get theme color for recoloring sprites
-        let theme_color = get_theme_color();
-
-        // Get appropriate cat frame from resources and recolor
-        let cat_raw = if self.is_sleeping {
-            &self.resources.cat_sleep
-        } else {
-            &self.resources.cat_frames
-                [self.current_frame as usize % self.resources.cat_frames.len()]
-        };
-        let cat = recolor_image(cat_raw, theme_color);
+        // Get cached colored cat frame (no recoloring!)
+        let cat = self.resources.get_cat_frame(self.current_frame, self.is_sleeping);
 
         // Only show percentage if user enabled AND panel is medium or larger AND cat is awake
         let should_show_pct =
@@ -320,11 +394,11 @@ impl RunkatTray {
             // For small panels, scale up the cat to use more space (48x48)
             if !self.panel_medium_or_larger {
                 let scaled =
-                    image::imageops::resize(&cat, 48, 48, image::imageops::FilterType::Nearest);
+                    image::imageops::resize(cat, 48, 48, image::imageops::FilterType::Nearest);
                 return Some(scaled);
             }
-            // Just return the cat if no percentage
-            return Some(cat);
+            // Just return the cat if no percentage (clone needed since we return owned)
+            return Some(cat.clone());
         }
 
         // Format CPU percentage (no decimal, max 3 chars)
@@ -349,20 +423,18 @@ impl RunkatTray {
         let text_x = CAT_SIZE + CAT_PCT_SPACING;
         let text_y = (CAT_SIZE - DIGIT_HEIGHT) / 2; // Center vertically
 
-        // Composite each digit (recolored with theme color)
+        // Composite each digit (uses cached colored sprites)
         let mut x = text_x;
         for ch in cpu_str.chars() {
-            if let Some(digit_raw) = self.resources.digits.get(&ch) {
-                let digit_sprite = recolor_image(digit_raw, theme_color);
-                composite_sprite(&mut icon, &digit_sprite, x, text_y);
+            if let Some(digit_sprite) = self.resources.get_digit(ch) {
+                composite_sprite(&mut icon, digit_sprite, x, text_y);
                 x += char_spacing;
             }
         }
 
         // Add % symbol
-        if let Some(pct_raw) = self.resources.digits.get(&'%') {
-            let pct_sprite = recolor_image(pct_raw, theme_color);
-            composite_sprite(&mut icon, &pct_sprite, x, text_y);
+        if let Some(pct_sprite) = self.resources.get_digit('%') {
+            composite_sprite(&mut icon, pct_sprite, x, text_y);
         }
 
         Some(icon)
@@ -378,9 +450,7 @@ impl Tray for RunkatTray {
     }
 
     fn icon_theme_path(&self) -> String {
-        dirs::data_dir()
-            .map(|p| p.join("icons").to_string_lossy().to_string())
-            .unwrap_or_default()
+        dirs::data_dir().map(|p| p.join("icons").to_string_lossy().to_string()).unwrap_or_default()
     }
 
     fn icon_name(&self) -> String {
@@ -403,11 +473,7 @@ impl Tray for RunkatTray {
             argb_data.push(b);
         }
 
-        vec![ksni::Icon {
-            width: img.width() as i32,
-            height: img.height() as i32,
-            data: argb_data,
-        }]
+        vec![ksni::Icon { width: img.width() as i32, height: img.height() as i32, data: argb_data }]
     }
 
     fn title(&self) -> String {
@@ -466,30 +532,38 @@ impl Tray for RunkatTray {
 ///
 /// The tray automatically restarts after suspend/resume to recover from
 /// stale D-Bus connections that cause the icon to disappear.
+///
+/// This now uses a tokio runtime for async event-driven architecture.
 pub fn run_tray() -> Result<(), String> {
-    // Brief delay on startup to ensure StatusNotifierWatcher is ready
-    // This helps when autostarting at login before the panel is fully initialized
-    std::thread::sleep(Duration::from_secs(2));
+    // Create tokio runtime for tray (settings app already has one)
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(|e| format!("Failed to create runtime: {}", e))?;
 
-    // Outer retry loop - restarts tray after suspend/resume
-    loop {
-        match run_tray_inner()? {
-            TrayExitReason::Quit => break,
-            TrayExitReason::SuspendResume => {
-                println!("Detected suspend/resume, restarting tray...");
-                // Brief delay before restarting to let D-Bus settle
-                std::thread::sleep(Duration::from_millis(500));
-                continue;
+    runtime.block_on(async {
+        // Brief delay on startup to ensure StatusNotifierWatcher is ready
+        tokio::time::sleep(STARTUP_DELAY).await;
+
+        // Outer retry loop - restarts tray after suspend/resume
+        loop {
+            match run_tray_inner().await? {
+                TrayExitReason::Quit => break,
+                TrayExitReason::SuspendResume => {
+                    tracing::warn!("Detected suspend/resume, restarting tray...");
+                    tokio::time::sleep(SUSPEND_RESTART_DELAY).await;
+                    continue;
+                }
             }
         }
-    }
 
-    Ok(())
+        Ok(())
+    })
 }
 
-/// Inner implementation of the tray service
+/// Inner implementation of the tray service (async)
 /// Returns the reason for exit so the outer loop can decide whether to restart
-fn run_tray_inner() -> Result<TrayExitReason, String> {
+async fn run_tray_inner() -> Result<TrayExitReason, String> {
     // Create lockfile to indicate tray is running
     crate::create_tray_lockfile();
 
@@ -498,69 +572,30 @@ fn run_tray_inner() -> Result<TrayExitReason, String> {
     // Load config
     let config = Config::load();
 
-    let tray = RunkatTray::new(should_quit.clone(), config.show_percentage)
-        .ok_or_else(|| "Failed to load tray resources".to_string())?;
+    let tray = RunkatTray::new(should_quit.clone(), config.show_percentage);
 
-    // Spawn the tray service
+    // Spawn the tray service (ASYNC API!)
     // In Flatpak, disable D-Bus well-known name to avoid PID conflicts
     let is_sandboxed = std::path::Path::new("/.flatpak-info").exists();
-    let handle = BlockingTrayMethods::disable_dbus_name(tray, is_sandboxed)
-        .spawn()
-        .map_err(|e| format!("Failed to spawn tray: {}", e))?;
+    tracing::debug!("Spawning tray service (sandboxed: {})", is_sandboxed);
+
+    let handle =
+        if is_sandboxed { tray.disable_dbus_name(true).spawn().await } else { tray.spawn().await }
+            .map_err(|e| format!("Failed to spawn tray: {}", e))?;
+
+    tracing::info!("Tray service started successfully");
 
     // Start CPU monitoring
     let cpu_monitor = CpuMonitor::new();
-    cpu_monitor.start(Duration::from_millis(500));
+    cpu_monitor.start(CPU_SAMPLE_INTERVAL);
+    let mut cpu_rx = cpu_monitor.subscribe();
 
-    // Set up file watcher for theme, panel size, and app config changes
-    let (config_tx, config_rx) = channel();
-    let _watcher = {
-        let tx = config_tx.clone();
-        let notify_config = NotifyConfig::default().with_poll_interval(Duration::from_secs(1));
-        let mut watcher: Result<RecommendedWatcher, _> = Watcher::new(
-            move |res: Result<notify::Event, _>| {
-                if let Ok(event) = res {
-                    if matches!(
-                        event.kind,
-                        notify::EventKind::Modify(_) | notify::EventKind::Create(_)
-                    ) {
-                        let _ = tx.send(());
-                    }
-                }
-            },
-            notify_config,
-        );
-        if let Ok(ref mut w) = watcher {
-            // Watch theme config directory
-            if let Some(theme_path) = cosmic_theme_path() {
-                if let Some(watch_dir) = theme_path.parent() {
-                    let _ = w.watch(watch_dir, RecursiveMode::NonRecursive);
-                }
-            }
-            // Watch theme color files directory (accent, background)
-            if let Some(theme_dir) = cosmic_theme_dir() {
-                let _ = w.watch(&theme_dir, RecursiveMode::NonRecursive);
-            }
-            // Watch panel config directory
-            if let Some(panel_path) = cosmic_panel_size_path() {
-                if let Some(watch_dir) = panel_path.parent() {
-                    let _ = w.watch(watch_dir, RecursiveMode::NonRecursive);
-                }
-            }
-            // Watch app config directory for settings changes
-            let app_config_path = Config::config_path();
-            if let Some(watch_dir) = app_config_path.parent() {
-                let _ = w.watch(watch_dir, RecursiveMode::NonRecursive);
-            }
-        }
-        watcher.ok()
-    };
+    // Note: File watcher removed - using periodic polling as it's more reliable
+    // for theme and config changes. Can be re-added later with async notify if needed.
 
     // Track current config for detecting changes
     let mut config = config;
-    let mut last_config_check = Instant::now();
     let mut tracked_theme_mtime = get_theme_files_mtime();
-    const CONFIG_CHECK_INTERVAL: Duration = Duration::from_millis(500);
 
     // Animation state
     let mut current_frame: u8 = 0;
@@ -568,146 +603,305 @@ fn run_tray_inner() -> Result<TrayExitReason, String> {
     let mut current_cpu: f32 = 0.0;
     let mut last_raw_cpu: f32 = -1.0;
 
-    // CPU smoothing - moving average over last 10 actual readings (5 seconds at 500ms sample rate)
-    const CPU_SAMPLE_COUNT: usize = 10;
+    // CPU smoothing - moving average over last N actual readings
     let mut cpu_samples: VecDeque<f32> = VecDeque::with_capacity(CPU_SAMPLE_COUNT);
+
+    // Async timers for event-driven architecture
+    let mut animation_tick = interval(Duration::from_millis(33)); // ~30fps check rate (was 60fps)
+    let mut config_check = interval(CONFIG_CHECK_INTERVAL);
+    let mut lockfile_refresh = interval(LOCKFILE_REFRESH_INTERVAL);
 
     // Track time for suspend/resume detection
     let mut loop_start = Instant::now();
 
-    // Main loop
+    // Main event loop (async with tokio::select!)
     loop {
-        // Detect suspend/resume by checking for time jumps
-        // If the sleep took much longer than expected (>5 seconds vs expected 16ms),
-        // we likely woke from suspend and should restart to recover D-Bus connections
-        let elapsed = loop_start.elapsed();
-        if elapsed > Duration::from_secs(5) {
-            println!("Time jump detected ({:?}), likely suspend/resume", elapsed);
-            handle.shutdown();
-            std::thread::sleep(Duration::from_millis(100));
-            crate::remove_tray_lockfile();
-            return Ok(TrayExitReason::SuspendResume);
-        }
-        loop_start = Instant::now();
+        tokio::select! {
+            // CPU update event
+            Ok(_) = cpu_rx.changed() => {
+                let new_cpu = *cpu_rx.borrow();
 
-        if should_quit.load(Ordering::SeqCst) {
-            break;
-        }
+                // Only process if significantly different
+                if (new_cpu - last_raw_cpu).abs() > 0.01 {
+                    last_raw_cpu = new_cpu;
+                    cpu_samples.push_back(new_cpu);
+                    if cpu_samples.len() > CPU_SAMPLE_COUNT {
+                        cpu_samples.pop_front();
+                    }
 
-        // Check for CPU updates - only add to samples when we get a new reading
-        let new_cpu = cpu_monitor.current();
-        if (new_cpu - last_raw_cpu).abs() > 0.01 {
-            // New reading from monitor
-            last_raw_cpu = new_cpu;
-            cpu_samples.push_back(new_cpu);
-            if cpu_samples.len() > CPU_SAMPLE_COUNT {
-                cpu_samples.pop_front();
-            }
-        }
+                    // Calculate smoothed average
+                    let smoothed_cpu = if cpu_samples.is_empty() {
+                        new_cpu
+                    } else {
+                        cpu_samples.iter().sum::<f32>() / cpu_samples.len() as f32
+                    };
 
-        // Calculate smoothed average
-        let smoothed_cpu = if cpu_samples.is_empty() {
-            new_cpu
-        } else {
-            cpu_samples.iter().sum::<f32>() / cpu_samples.len() as f32
-        };
+                    // Update displayed value if change is significant
+                    if (smoothed_cpu - current_cpu).abs() > CPU_DISPLAY_THRESHOLD {
+                        current_cpu = smoothed_cpu;
+                        let display_cpu = current_cpu.round();
+                        let is_sleeping = display_cpu < config.sleep_threshold;
 
-        // Only update displayed value if change is significant
-        if (smoothed_cpu - current_cpu).abs() > 0.5 {
-            current_cpu = smoothed_cpu;
-        }
+                        tracing::debug!("CPU: {:.1}%, sleeping: {}", display_cpu, is_sleeping);
 
-        // Round CPU for display and comparison (user sees whole numbers)
-        let display_cpu = current_cpu.round();
-
-        // Calculate animation speed based on actual CPU
-        let fps = config.calculate_fps(current_cpu);
-        // Sleep check uses rounded value: cat sleeps at 0 to (threshold-1)%
-        // e.g., threshold=5 means sleep at 0-4%, run at 5%+
-        let is_sleeping = display_cpu < config.sleep_threshold;
-
-        // Update animation frame if running
-        let frame_changed = if !is_sleeping && fps > 0.0 {
-            let frame_duration = Duration::from_secs_f32(1.0 / fps);
-            if last_frame_time.elapsed() >= frame_duration {
-                current_frame = (current_frame + 1) % RUN_FRAMES;
-                last_frame_time = Instant::now();
-                true
-            } else {
-                false
-            }
-        } else {
-            false
-        };
-
-        // Check for config changes (theme, panel size, or app settings)
-        let mut config_changed = config_rx.try_recv().is_ok();
-
-        // Also poll app config and theme periodically (inotify isn't always reliable)
-        // This runs every ~500ms
-        if last_config_check.elapsed() >= CONFIG_CHECK_INTERVAL {
-            last_config_check = Instant::now();
-            let new_config = Config::load();
-            if new_config.show_percentage != config.show_percentage
-                || (new_config.sleep_threshold - config.sleep_threshold).abs() > 0.1
-            {
-                config = new_config;
-                config_changed = true;
-            }
-            // Also check if theme color files have changed (robust backup to file watcher)
-            let new_mtime = get_theme_files_mtime();
-            if new_mtime != tracked_theme_mtime {
-                tracked_theme_mtime = new_mtime;
-                config_changed = true;
-            }
-        }
-
-        // Update tray if anything changed
-        if frame_changed || config_changed || (new_cpu - current_cpu).abs() > 1.0 {
-            handle.update(|tray| {
-                tray.current_frame = current_frame;
-                tray.cpu_percent = display_cpu; // Use rounded value for display
-                tray.is_sleeping = is_sleeping;
-                if config_changed {
-                    tray.panel_medium_or_larger = is_panel_medium_or_larger();
-                    tray.show_percentage = config.show_percentage;
+                        handle.update(|tray| {
+                            tray.cpu_percent = display_cpu;
+                            tray.is_sleeping = is_sleeping;
+                        }).await;
+                    }
                 }
-            });
-        } else if last_config_check.elapsed() < Duration::from_millis(20) {
-            // Just did a config check - also check if panel size changed without config change
-            let new_panel = is_panel_medium_or_larger();
-            handle.update(|tray| {
-                if tray.panel_medium_or_larger != new_panel {
-                    tray.panel_medium_or_larger = new_panel;
+            }
+
+            // Animation tick event
+            _ = animation_tick.tick() => {
+                // Check for suspend/resume via time jump
+                let elapsed = loop_start.elapsed();
+                if elapsed > SUSPEND_RESUME_THRESHOLD {
+                    tracing::warn!("Time jump detected ({:?}), likely suspend/resume", elapsed);
+                    handle.shutdown().await;
+                    tokio::time::sleep(DBUS_CLEANUP_DELAY).await;
+                    crate::remove_tray_lockfile();
+                    return Ok(TrayExitReason::SuspendResume);
                 }
-            });
-        }
+                loop_start = Instant::now();
 
-        // Refresh lockfile timestamp every 30 seconds to indicate we're still running
-        static LOCKFILE_REFRESH: std::sync::atomic::AtomicU64 =
-            std::sync::atomic::AtomicU64::new(0);
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_secs())
-            .unwrap_or(0);
-        let last_refresh = LOCKFILE_REFRESH.load(std::sync::atomic::Ordering::Relaxed);
-        if now - last_refresh >= 30 {
-            crate::create_tray_lockfile();
-            LOCKFILE_REFRESH.store(now, std::sync::atomic::Ordering::Relaxed);
-        }
+                // Check quit flag
+                if should_quit.load(Ordering::SeqCst) {
+                    break;
+                }
 
-        // Sleep briefly - 16ms for ~60Hz update check rate
-        std::thread::sleep(Duration::from_millis(16));
+                // Update animation frame if running
+                let display_cpu = current_cpu.round();
+                let is_sleeping = display_cpu < config.sleep_threshold;
+
+                if !is_sleeping {
+                    let fps = config.calculate_fps(current_cpu);
+                    if fps > 0.0 {
+                        let frame_duration = Duration::from_secs_f32(1.0 / fps);
+                        if last_frame_time.elapsed() >= frame_duration {
+                            current_frame = (current_frame + 1) % RUN_FRAMES;
+                            last_frame_time = Instant::now();
+
+                            handle.update(|tray| {
+                                tray.current_frame = current_frame;
+                            }).await;
+                        }
+                    }
+                }
+            }
+
+            // Config check event (periodic polling as fallback to file watcher)
+            _ = config_check.tick() => {
+                let new_config = Config::load();
+                let config_changed = new_config.show_percentage != config.show_percentage
+                    || (new_config.sleep_threshold - config.sleep_threshold).abs() > 0.1;
+
+                // Check for theme file changes
+                let new_mtime = get_theme_files_mtime();
+                let theme_changed = new_mtime != tracked_theme_mtime;
+
+                if config_changed || theme_changed {
+                    if config_changed {
+                        tracing::info!("Config changed: sleep_threshold={}, show_percentage={}",
+                                      new_config.sleep_threshold, new_config.show_percentage);
+                        config = new_config;
+                    }
+                    if theme_changed {
+                        tracing::info!("Theme files changed, reloading colors");
+                        tracked_theme_mtime = new_mtime;
+                    }
+
+                    // Get current theme color
+                    let theme_color = get_theme_color();
+                    let new_panel = is_panel_medium_or_larger();
+
+                    handle.update(|tray| {
+                        if config_changed {
+                            tray.show_percentage = config.show_percentage;
+                        }
+                        if theme_changed {
+                            tray.resources.update_colors(theme_color);
+                        }
+                        tray.panel_medium_or_larger = new_panel;
+                    }).await;
+                }
+            }
+
+            // Lockfile refresh event
+            _ = lockfile_refresh.tick() => {
+                crate::create_tray_lockfile();
+            }
+        }
     }
 
-    handle.shutdown();
-
-    // Small delay to ensure ksni's D-Bus resources are released
-    // Without this, the StatusNotifierItem might briefly appear "stuck"
-    std::thread::sleep(std::time::Duration::from_millis(100));
-
-    // Clean up lockfile on exit
+    // Shutdown sequence
+    handle.shutdown().await;
+    tokio::time::sleep(DBUS_CLEANUP_DELAY).await;
     crate::remove_tray_lockfile();
 
     Ok(TrayExitReason::Quit)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_recolor_image_preserves_alpha() {
+        let mut img = RgbaImage::new(2, 2);
+        img.put_pixel(0, 0, image::Rgba([100, 100, 100, 255])); // Opaque
+        img.put_pixel(1, 0, image::Rgba([50, 50, 50, 128])); // Semi-transparent
+        img.put_pixel(0, 1, image::Rgba([0, 0, 0, 0])); // Fully transparent
+        img.put_pixel(1, 1, image::Rgba([200, 200, 200, 255])); // Opaque
+
+        let recolored = recolor_image(&img, (255, 0, 0)); // Red
+
+        // Opaque pixels should be red
+        assert_eq!(recolored.get_pixel(0, 0), &image::Rgba([255, 0, 0, 255]));
+        assert_eq!(recolored.get_pixel(1, 1), &image::Rgba([255, 0, 0, 255]));
+
+        // Semi-transparent pixel should be red with preserved alpha
+        assert_eq!(recolored.get_pixel(1, 0), &image::Rgba([255, 0, 0, 128]));
+
+        // Fully transparent should stay transparent (color undefined but alpha=0)
+        assert_eq!(recolored.get_pixel(0, 1)[3], 0);
+    }
+
+    #[test]
+    fn test_composite_sprite_basic() {
+        let mut target = RgbaImage::new(10, 10);
+        let mut sprite = RgbaImage::new(3, 3);
+
+        // Fill sprite with red
+        for pixel in sprite.pixels_mut() {
+            *pixel = image::Rgba([255, 0, 0, 255]);
+        }
+
+        composite_sprite(&mut target, &sprite, 2, 2);
+
+        // Check sprite was composited at correct position
+        assert_eq!(target.get_pixel(2, 2), &image::Rgba([255, 0, 0, 255]));
+        assert_eq!(target.get_pixel(4, 4), &image::Rgba([255, 0, 0, 255]));
+
+        // Check outside sprite area is still black/transparent
+        assert_eq!(target.get_pixel(0, 0)[0], 0);
+        assert_eq!(target.get_pixel(9, 9)[0], 0);
+    }
+
+    #[test]
+    fn test_composite_sprite_skips_transparent() {
+        let mut target = RgbaImage::new(10, 10);
+        // Fill target with white
+        for pixel in target.pixels_mut() {
+            *pixel = image::Rgba([255, 255, 255, 255]);
+        }
+
+        let mut sprite = RgbaImage::new(2, 2);
+        sprite.put_pixel(0, 0, image::Rgba([255, 0, 0, 255])); // Red opaque
+        sprite.put_pixel(1, 0, image::Rgba([0, 255, 0, 0])); // Transparent
+
+        composite_sprite(&mut target, &sprite, 0, 0);
+
+        // Opaque pixel should overwrite
+        assert_eq!(target.get_pixel(0, 0), &image::Rgba([255, 0, 0, 255]));
+
+        // Transparent pixel should be skipped (target stays white)
+        assert_eq!(target.get_pixel(1, 0), &image::Rgba([255, 255, 255, 255]));
+    }
+
+    #[test]
+    fn test_resources_update_colors_caches() {
+        let mut resources = Resources::load().expect("Should load test resources");
+
+        let color1 = (255, 0, 0); // Red
+        let color2 = (0, 0, 255); // Blue
+
+        // First update should recolor
+        resources.update_colors(color1);
+        assert_eq!(resources.last_theme_color, Some(color1));
+
+        // Get first cat frame color
+        let cat_frame = resources.get_cat_frame(0, false);
+        // Find a non-transparent pixel and verify it's red-ish
+        let has_red = cat_frame.pixels().any(|p| p[3] > 0 && p[0] > 200);
+        assert!(has_red, "Should have recolored to red");
+
+        // Second update with same color should be no-op (check by last_theme_color)
+        resources.update_colors(color1);
+        assert_eq!(resources.last_theme_color, Some(color1));
+
+        // Update with different color should recolor
+        resources.update_colors(color2);
+        assert_eq!(resources.last_theme_color, Some(color2));
+
+        let cat_frame = resources.get_cat_frame(0, false);
+        let has_blue = cat_frame.pixels().any(|p| p[3] > 0 && p[2] > 200);
+        assert!(has_blue, "Should have recolored to blue");
+    }
+
+    #[test]
+    fn test_resources_get_cat_frame() {
+        let resources = Resources::load().expect("Should load test resources");
+
+        // Get sleeping frame
+        let sleeping = resources.get_cat_frame(0, true);
+        assert_eq!(sleeping.width(), CAT_SIZE);
+        assert_eq!(sleeping.height(), CAT_SIZE);
+
+        // Get running frame
+        let running = resources.get_cat_frame(5, false);
+        assert_eq!(running.width(), CAT_SIZE);
+        assert_eq!(running.height(), CAT_SIZE);
+
+        // Frame index should wrap
+        let frame_high = resources.get_cat_frame(99, false);
+        assert_eq!(frame_high.width(), CAT_SIZE);
+    }
+
+    #[test]
+    fn test_resources_get_digit() {
+        let resources = Resources::load().expect("Should load test resources");
+
+        // All digits should be available
+        for ch in "0123456789%".chars() {
+            let digit = resources.get_digit(ch);
+            assert!(digit.is_some(), "Digit '{}' should be loaded", ch);
+
+            if let Some(img) = digit {
+                assert_eq!(img.width(), DIGIT_WIDTH);
+                assert_eq!(img.height(), DIGIT_HEIGHT);
+            }
+        }
+
+        // Invalid character should return None
+        assert!(resources.get_digit('X').is_none());
+    }
+
+    #[test]
+    fn test_fallback_icon_creation() {
+        let icon = create_fallback_icon(32, (200, 200, 200));
+        assert_eq!(icon.width(), 32);
+        assert_eq!(icon.height(), 32);
+
+        // Center should be colored (within radius)
+        let center_pixel = icon.get_pixel(16, 16);
+        assert_eq!(center_pixel[0], 200);
+        assert_eq!(center_pixel[1], 200);
+        assert_eq!(center_pixel[2], 200);
+        assert_eq!(center_pixel[3], 255); // Opaque
+
+        // Corners should be transparent
+        let corner_pixel = icon.get_pixel(0, 0);
+        assert_eq!(corner_pixel[3], 0);
+    }
+
+    #[test]
+    fn test_resources_load_or_fallback() {
+        // Should always succeed (either loads or creates fallback)
+        let resources = Resources::load_or_fallback();
+
+        // Should have at least fallback resources
+        assert!(!resources.cat_frames_original.is_empty());
+        assert_eq!(resources.cat_frames_original.len(), RUN_FRAMES as usize);
+    }
 }
