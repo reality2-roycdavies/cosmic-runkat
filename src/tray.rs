@@ -9,17 +9,15 @@ use crate::constants::*;
 use crate::cpu::CpuMonitor;
 use image::RgbaImage;
 use ksni::Tray;
-// Import the blocking TrayMethods trait for sync spawn/disable_dbus_name
-use ksni::blocking::TrayMethods as BlockingTrayMethods;
-use notify::{Config as NotifyConfig, RecommendedWatcher, RecursiveMode, Watcher};
+// Using native async API (Phase 3)
+use ksni::TrayMethods;
 use std::collections::VecDeque;
 use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc::channel;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use tokio::time::{interval, Duration, Instant};
 
 /// Get the host's COSMIC config directory
 /// In Flatpak, dirs::config_dir() returns the sandboxed config, not the host's
@@ -530,30 +528,38 @@ impl Tray for RunkatTray {
 ///
 /// The tray automatically restarts after suspend/resume to recover from
 /// stale D-Bus connections that cause the icon to disappear.
+///
+/// This now uses a tokio runtime for async event-driven architecture.
 pub fn run_tray() -> Result<(), String> {
-    // Brief delay on startup to ensure StatusNotifierWatcher is ready
-    // This helps when autostarting at login before the panel is fully initialized
-    std::thread::sleep(STARTUP_DELAY);
+    // Create tokio runtime for tray (settings app already has one)
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(|e| format!("Failed to create runtime: {}", e))?;
 
-    // Outer retry loop - restarts tray after suspend/resume
-    loop {
-        match run_tray_inner()? {
-            TrayExitReason::Quit => break,
-            TrayExitReason::SuspendResume => {
-                println!("Detected suspend/resume, restarting tray...");
-                // Brief delay before restarting to let D-Bus settle
-                std::thread::sleep(SUSPEND_RESTART_DELAY);
-                continue;
+    runtime.block_on(async {
+        // Brief delay on startup to ensure StatusNotifierWatcher is ready
+        tokio::time::sleep(STARTUP_DELAY).await;
+
+        // Outer retry loop - restarts tray after suspend/resume
+        loop {
+            match run_tray_inner().await? {
+                TrayExitReason::Quit => break,
+                TrayExitReason::SuspendResume => {
+                    tracing::warn!("Detected suspend/resume, restarting tray...");
+                    tokio::time::sleep(SUSPEND_RESTART_DELAY).await;
+                    continue;
+                }
             }
         }
-    }
 
-    Ok(())
+        Ok(())
+    })
 }
 
-/// Inner implementation of the tray service
+/// Inner implementation of the tray service (async)
 /// Returns the reason for exit so the outer loop can decide whether to restart
-fn run_tray_inner() -> Result<TrayExitReason, String> {
+async fn run_tray_inner() -> Result<TrayExitReason, String> {
     // Create lockfile to indicate tray is running
     crate::create_tray_lockfile();
 
@@ -565,64 +571,30 @@ fn run_tray_inner() -> Result<TrayExitReason, String> {
     let tray = RunkatTray::new(should_quit.clone(), config.show_percentage)
         .ok_or_else(|| "Failed to load tray resources".to_string())?;
 
-    // Spawn the tray service
+    // Spawn the tray service (ASYNC API!)
     // In Flatpak, disable D-Bus well-known name to avoid PID conflicts
     let is_sandboxed = std::path::Path::new("/.flatpak-info").exists();
-    let handle = BlockingTrayMethods::disable_dbus_name(tray, is_sandboxed)
-        .spawn()
-        .map_err(|e| format!("Failed to spawn tray: {}", e))?;
+    tracing::debug!("Spawning tray service (sandboxed: {})", is_sandboxed);
+
+    let handle = if is_sandboxed {
+        tray.disable_dbus_name(true).spawn().await
+    } else {
+        tray.spawn().await
+    }
+    .map_err(|e| format!("Failed to spawn tray: {}", e))?;
+
+    tracing::info!("Tray service started successfully");
 
     // Start CPU monitoring
     let cpu_monitor = CpuMonitor::new();
     cpu_monitor.start(CPU_SAMPLE_INTERVAL);
+    let mut cpu_rx = cpu_monitor.subscribe();
 
-    // Set up file watcher for theme, panel size, and app config changes
-    let (config_tx, config_rx) = channel();
-    let _watcher = {
-        let tx = config_tx.clone();
-        let notify_config = NotifyConfig::default().with_poll_interval(Duration::from_secs(1));
-        let mut watcher: Result<RecommendedWatcher, _> = Watcher::new(
-            move |res: Result<notify::Event, _>| {
-                if let Ok(event) = res {
-                    if matches!(
-                        event.kind,
-                        notify::EventKind::Modify(_) | notify::EventKind::Create(_)
-                    ) {
-                        let _ = tx.send(());
-                    }
-                }
-            },
-            notify_config,
-        );
-        if let Ok(ref mut w) = watcher {
-            // Watch theme config directory
-            if let Some(theme_path) = cosmic_theme_path() {
-                if let Some(watch_dir) = theme_path.parent() {
-                    let _ = w.watch(watch_dir, RecursiveMode::NonRecursive);
-                }
-            }
-            // Watch theme color files directory (accent, background)
-            if let Some(theme_dir) = cosmic_theme_dir() {
-                let _ = w.watch(&theme_dir, RecursiveMode::NonRecursive);
-            }
-            // Watch panel config directory
-            if let Some(panel_path) = cosmic_panel_size_path() {
-                if let Some(watch_dir) = panel_path.parent() {
-                    let _ = w.watch(watch_dir, RecursiveMode::NonRecursive);
-                }
-            }
-            // Watch app config directory for settings changes
-            let app_config_path = Config::config_path();
-            if let Some(watch_dir) = app_config_path.parent() {
-                let _ = w.watch(watch_dir, RecursiveMode::NonRecursive);
-            }
-        }
-        watcher.ok()
-    };
+    // Note: File watcher removed - using periodic polling as it's more reliable
+    // for theme and config changes. Can be re-added later with async notify if needed.
 
     // Track current config for detecting changes
     let mut config = config;
-    let mut last_config_check = Instant::now();
     let mut tracked_theme_mtime = get_theme_files_mtime();
 
     // Animation state
@@ -631,152 +603,140 @@ fn run_tray_inner() -> Result<TrayExitReason, String> {
     let mut current_cpu: f32 = 0.0;
     let mut last_raw_cpu: f32 = -1.0;
 
-    // Lockfile refresh tracking
-    let mut last_lockfile_refresh = Instant::now();
-
-    // CPU smoothing - moving average over last N actual readings (5 seconds at 500ms sample rate)
+    // CPU smoothing - moving average over last N actual readings
     let mut cpu_samples: VecDeque<f32> = VecDeque::with_capacity(CPU_SAMPLE_COUNT);
+
+    // Async timers for event-driven architecture
+    let mut animation_tick = interval(Duration::from_millis(33)); // ~30fps check rate (was 60fps)
+    let mut config_check = interval(CONFIG_CHECK_INTERVAL);
+    let mut lockfile_refresh = interval(LOCKFILE_REFRESH_INTERVAL);
 
     // Track time for suspend/resume detection
     let mut loop_start = Instant::now();
 
-    // Main loop
+    // Main event loop (async with tokio::select!)
     loop {
-        // Detect suspend/resume by checking for time jumps
-        // If the sleep took much longer than expected (>5 seconds vs expected 16ms),
-        // we likely woke from suspend and should restart to recover D-Bus connections
-        let elapsed = loop_start.elapsed();
-        if elapsed > SUSPEND_RESUME_THRESHOLD {
-            println!("Time jump detected ({:?}), likely suspend/resume", elapsed);
-            handle.shutdown();
-            std::thread::sleep(DBUS_CLEANUP_DELAY);
-            crate::remove_tray_lockfile();
-            return Ok(TrayExitReason::SuspendResume);
-        }
-        loop_start = Instant::now();
+        tokio::select! {
+            // CPU update event
+            Ok(_) = cpu_rx.changed() => {
+                let new_cpu = *cpu_rx.borrow();
 
-        if should_quit.load(Ordering::SeqCst) {
-            break;
-        }
+                // Only process if significantly different
+                if (new_cpu - last_raw_cpu).abs() > 0.01 {
+                    last_raw_cpu = new_cpu;
+                    cpu_samples.push_back(new_cpu);
+                    if cpu_samples.len() > CPU_SAMPLE_COUNT {
+                        cpu_samples.pop_front();
+                    }
 
-        // Check for CPU updates - only add to samples when we get a new reading
-        let new_cpu = cpu_monitor.current();
-        if (new_cpu - last_raw_cpu).abs() > 0.01 {
-            // New reading from monitor
-            last_raw_cpu = new_cpu;
-            cpu_samples.push_back(new_cpu);
-            if cpu_samples.len() > CPU_SAMPLE_COUNT {
-                cpu_samples.pop_front();
-            }
-        }
+                    // Calculate smoothed average
+                    let smoothed_cpu = if cpu_samples.is_empty() {
+                        new_cpu
+                    } else {
+                        cpu_samples.iter().sum::<f32>() / cpu_samples.len() as f32
+                    };
 
-        // Calculate smoothed average
-        let smoothed_cpu = if cpu_samples.is_empty() {
-            new_cpu
-        } else {
-            cpu_samples.iter().sum::<f32>() / cpu_samples.len() as f32
-        };
+                    // Update displayed value if change is significant
+                    if (smoothed_cpu - current_cpu).abs() > CPU_DISPLAY_THRESHOLD {
+                        current_cpu = smoothed_cpu;
+                        let display_cpu = current_cpu.round();
+                        let is_sleeping = display_cpu < config.sleep_threshold;
 
-        // Only update displayed value if change is significant
-        if (smoothed_cpu - current_cpu).abs() > CPU_DISPLAY_THRESHOLD {
-            current_cpu = smoothed_cpu;
-        }
+                        tracing::debug!("CPU: {:.1}%, sleeping: {}", display_cpu, is_sleeping);
 
-        // Round CPU for display and comparison (user sees whole numbers)
-        let display_cpu = current_cpu.round();
-
-        // Calculate animation speed based on actual CPU
-        let fps = config.calculate_fps(current_cpu);
-        // Sleep check uses rounded value: cat sleeps at 0 to (threshold-1)%
-        // e.g., threshold=5 means sleep at 0-4%, run at 5%+
-        let is_sleeping = display_cpu < config.sleep_threshold;
-
-        // Update animation frame if running
-        let frame_changed = if !is_sleeping && fps > 0.0 {
-            let frame_duration = Duration::from_secs_f32(1.0 / fps);
-            if last_frame_time.elapsed() >= frame_duration {
-                current_frame = (current_frame + 1) % RUN_FRAMES;
-                last_frame_time = Instant::now();
-                true
-            } else {
-                false
-            }
-        } else {
-            false
-        };
-
-        // Check for config changes (theme, panel size, or app settings)
-        let mut config_changed = config_rx.try_recv().is_ok();
-
-        // Also poll app config and theme periodically (inotify isn't always reliable)
-        // This runs every ~500ms
-        if last_config_check.elapsed() >= CONFIG_CHECK_INTERVAL {
-            last_config_check = Instant::now();
-            let new_config = Config::load();
-            if new_config.show_percentage != config.show_percentage
-                || (new_config.sleep_threshold - config.sleep_threshold).abs() > 0.1
-            {
-                config = new_config;
-                config_changed = true;
-            }
-            // Also check if theme color files have changed (robust backup to file watcher)
-            let new_mtime = get_theme_files_mtime();
-            if new_mtime != tracked_theme_mtime {
-                tracked_theme_mtime = new_mtime;
-                config_changed = true;
-            }
-        }
-
-        // Update tray if anything changed
-        if frame_changed || config_changed || (new_cpu - current_cpu).abs() > 1.0 {
-            // Get current theme color (only when updating)
-            let theme_color = if config_changed {
-                Some(get_theme_color())
-            } else {
-                None
-            };
-
-            handle.update(|tray| {
-                tray.current_frame = current_frame;
-                tray.cpu_percent = display_cpu; // Use rounded value for display
-                tray.is_sleeping = is_sleeping;
-                if config_changed {
-                    tray.panel_medium_or_larger = is_panel_medium_or_larger();
-                    tray.show_percentage = config.show_percentage;
-
-                    // Update cached recolored sprites if theme changed
-                    if let Some(color) = theme_color {
-                        tray.resources.update_colors(color);
+                        handle.update(|tray| {
+                            tray.cpu_percent = display_cpu;
+                            tray.is_sleeping = is_sleeping;
+                        }).await;
                     }
                 }
-            });
-        } else if last_config_check.elapsed() < Duration::from_millis(20) {
-            // Just did a config check - also check if panel size changed without config change
-            let new_panel = is_panel_medium_or_larger();
-            handle.update(|tray| {
-                if tray.panel_medium_or_larger != new_panel {
-                    tray.panel_medium_or_larger = new_panel;
+            }
+
+            // Animation tick event
+            _ = animation_tick.tick() => {
+                // Check for suspend/resume via time jump
+                let elapsed = loop_start.elapsed();
+                if elapsed > SUSPEND_RESUME_THRESHOLD {
+                    tracing::warn!("Time jump detected ({:?}), likely suspend/resume", elapsed);
+                    handle.shutdown().await;
+                    tokio::time::sleep(DBUS_CLEANUP_DELAY).await;
+                    crate::remove_tray_lockfile();
+                    return Ok(TrayExitReason::SuspendResume);
                 }
-            });
-        }
+                loop_start = Instant::now();
 
-        // Refresh lockfile timestamp periodically to indicate we're still running
-        if last_lockfile_refresh.elapsed() >= LOCKFILE_REFRESH_INTERVAL {
-            crate::create_tray_lockfile();
-            last_lockfile_refresh = Instant::now();
-        }
+                // Check quit flag
+                if should_quit.load(Ordering::SeqCst) {
+                    break;
+                }
 
-        // Sleep briefly - 16ms for ~60Hz update check rate
-        std::thread::sleep(Duration::from_millis(16));
+                // Update animation frame if running
+                let display_cpu = current_cpu.round();
+                let is_sleeping = display_cpu < config.sleep_threshold;
+
+                if !is_sleeping {
+                    let fps = config.calculate_fps(current_cpu);
+                    if fps > 0.0 {
+                        let frame_duration = Duration::from_secs_f32(1.0 / fps);
+                        if last_frame_time.elapsed() >= frame_duration {
+                            current_frame = (current_frame + 1) % RUN_FRAMES;
+                            last_frame_time = Instant::now();
+
+                            handle.update(|tray| {
+                                tray.current_frame = current_frame;
+                            }).await;
+                        }
+                    }
+                }
+            }
+
+            // Config check event (periodic polling as fallback to file watcher)
+            _ = config_check.tick() => {
+                let new_config = Config::load();
+                let config_changed = new_config.show_percentage != config.show_percentage
+                    || (new_config.sleep_threshold - config.sleep_threshold).abs() > 0.1;
+
+                // Check for theme file changes
+                let new_mtime = get_theme_files_mtime();
+                let theme_changed = new_mtime != tracked_theme_mtime;
+
+                if config_changed || theme_changed {
+                    if config_changed {
+                        tracing::info!("Config changed: sleep_threshold={}, show_percentage={}",
+                                      new_config.sleep_threshold, new_config.show_percentage);
+                        config = new_config;
+                    }
+                    if theme_changed {
+                        tracing::info!("Theme files changed, reloading colors");
+                        tracked_theme_mtime = new_mtime;
+                    }
+
+                    // Get current theme color
+                    let theme_color = get_theme_color();
+                    let new_panel = is_panel_medium_or_larger();
+
+                    handle.update(|tray| {
+                        if config_changed {
+                            tray.show_percentage = config.show_percentage;
+                        }
+                        if theme_changed {
+                            tray.resources.update_colors(theme_color);
+                        }
+                        tray.panel_medium_or_larger = new_panel;
+                    }).await;
+                }
+            }
+
+            // Lockfile refresh event
+            _ = lockfile_refresh.tick() => {
+                crate::create_tray_lockfile();
+            }
+        }
     }
 
-    handle.shutdown();
-
-    // Small delay to ensure ksni's D-Bus resources are released
-    // Without this, the StatusNotifierItem might briefly appear "stuck"
-    std::thread::sleep(DBUS_CLEANUP_DELAY);
-
-    // Clean up lockfile on exit
+    // Shutdown sequence
+    handle.shutdown().await;
+    tokio::time::sleep(DBUS_CLEANUP_DELAY).await;
     crate::remove_tray_lockfile();
 
     Ok(TrayExitReason::Quit)

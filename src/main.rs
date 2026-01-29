@@ -246,6 +246,16 @@ X-GNOME-Autostart-enabled=true
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Initialize structured logging
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::from_default_env()
+                .add_directive("cosmic_runkat=info".parse().unwrap()),
+        )
+        .init();
+
+    tracing::info!("Starting cosmic-runkat v{}", env!("CARGO_PKG_VERSION"));
+
     let args: Vec<String> = env::args().collect();
 
     // Parse command line arguments
@@ -265,10 +275,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                 // Check if tray is already running
                 if is_tray_running() {
+                    tracing::info!("RunKat tray is already running");
                     println!("RunKat tray is already running.");
                     return Ok(());
                 }
 
+                tracing::info!("Starting cosmic-runkat tray");
                 println!("Starting cosmic-runkat tray...");
                 ensure_autostart();
                 tray::run_tray().map_err(|e| e.into())
@@ -298,18 +310,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         cleanup_stale_lockfiles();
 
         if is_gui_running() {
+            tracing::info!("Settings window is already open");
             println!("Settings window is already open.");
             return Ok(());
         }
         if !is_tray_running() {
+            tracing::info!("Starting cosmic-runkat tray in background");
             println!("Starting cosmic-runkat tray in background...");
             // Start tray in background (Flatpak-aware)
             if let Err(e) = spawn_tray_background() {
+                tracing::error!("Failed to start tray: {}", e);
                 eprintln!("Warning: Failed to start tray: {}", e);
             }
             // Give tray time to initialize
             std::thread::sleep(std::time::Duration::from_millis(500));
         }
+        tracing::info!("Opening settings window");
         println!("Opening settings...");
         create_gui_lockfile();
         let result = settings::run_settings().map_err(|e| e.into());

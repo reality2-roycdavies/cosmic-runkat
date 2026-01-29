@@ -67,6 +67,7 @@ impl Config {
             if let Some(mut config) = Self::load_from_path(&path) {
                 // Validate and fix if needed
                 if let Err(e) = config.validate() {
+                    tracing::warn!("Invalid config: {}. Using defaults.", e);
                     eprintln!("Warning: Invalid config: {}. Using defaults.", e);
                     config = Self::default();
                 }
@@ -77,19 +78,23 @@ impl Config {
         // Try legacy location for migration
         if let Some(legacy_path) = Self::legacy_config_path() {
             if legacy_path.exists() && legacy_path != path {
+                tracing::info!("Found config at legacy location, migrating to new location");
                 eprintln!("Found config at legacy location, migrating to new location...");
 
                 if let Some(mut config) = Self::load_from_path(&legacy_path) {
                     // Validate before migrating
                     if let Err(e) = config.validate() {
+                        tracing::warn!("Invalid legacy config: {}. Using defaults.", e);
                         eprintln!("Warning: Invalid legacy config: {}. Using defaults.", e);
                         config = Self::default();
                     }
 
                     // Migrate to new location
                     if let Err(e) = config.save() {
+                        tracing::error!("Failed to migrate config: {}", e);
                         eprintln!("Warning: Failed to migrate config: {}", e);
                     } else {
+                        tracing::info!("Successfully migrated config");
                         eprintln!("Successfully migrated config to new location");
                         // Remove old file after successful migration
                         let _ = fs::remove_file(legacy_path);
@@ -107,13 +112,18 @@ impl Config {
     fn load_from_path(path: &Path) -> Option<Self> {
         match fs::read_to_string(path) {
             Ok(content) => match serde_json::from_str(&content) {
-                Ok(config) => Some(config),
+                Ok(config) => {
+                    tracing::debug!("Loaded config from {:?}", path);
+                    Some(config)
+                }
                 Err(e) => {
+                    tracing::error!("Failed to parse config file: {}", e);
                     eprintln!("Failed to parse config file: {}", e);
                     None
                 }
             },
             Err(e) => {
+                tracing::error!("Failed to read config file: {}", e);
                 eprintln!("Failed to read config file: {}", e);
                 None
             }

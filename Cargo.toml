@@ -30,7 +30,8 @@ serde_json = "1"
 dirs = "6"
 
 # System tray (StatusNotifierItem protocol)
-ksni = { version = "0.3", features = ["blocking"] }
+# Using native async API (removed "blocking" feature for Phase 3)
+ksni = { version = "0.3" }
 image = "0.24"
 
 # File system watching for theme changes
@@ -39,15 +40,9 @@ notify = "6"
 # Error handling
 thiserror = "2.0"
 
-# NOTE: Structured logging (tracing) will be added in Phase 3
-# when we actually use it for event-driven architecture
-# Removed temporarily to allow Flatpak build with vendored dependencies
-# tracing = "0.1"
-# tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-
-# NOTE: RON parsing (ron) will be added in Phase 3
-# when we integrate libcosmic theme APIs
-# Removed temporarily to allow Flatpak build with vendored dependencies
+# Structured logging (Phase 3)
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 [profile.release]
 lto = true

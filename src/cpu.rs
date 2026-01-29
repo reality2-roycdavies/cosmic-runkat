@@ -54,16 +54,16 @@ impl CpuMonitor {
                                 // Calculate total CPU usage (everything except idle)
                                 let usage = (1.0 - cpu_load.idle) * 100.0;
                                 if let Err(e) = tx.send(usage) {
-                                    eprintln!("Failed to send CPU update: {}", e);
+                                    tracing::error!("Failed to send CPU update: {}", e);
                                 }
                             }
                             Err(e) => {
-                                eprintln!("CPU measurement error: {}", e);
+                                tracing::error!("CPU measurement error: {}", e);
                             }
                         }
                     }
                     Err(e) => {
-                        eprintln!("CPU load error: {}", e);
+                        tracing::error!("CPU load error: {}", e);
                         thread::sleep(sample_interval);
                     }
                 }
@@ -77,8 +77,17 @@ impl CpuMonitor {
     }
 
     /// Get the current CPU percentage (last sampled value)
+    #[allow(dead_code)] // Still useful for non-async code paths
     pub fn current(&self) -> f32 {
         *self.rx.borrow()
+    }
+
+    /// Subscribe to CPU updates (for async event-driven architecture)
+    ///
+    /// Returns a watch::Receiver that can be used with tokio::select!
+    /// to react to CPU changes.
+    pub fn subscribe(&self) -> watch::Receiver<f32> {
+        self.rx.clone()
     }
 }
 
