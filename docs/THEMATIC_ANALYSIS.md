@@ -362,6 +362,113 @@ Building on previous recommendations:
 
 ---
 
+## Theme 15: Systematic Refactoring Through Phased Planning (Session 4 - v1.0.0)
+
+**Pattern:** Large refactoring succeeded through structured multi-phase approach.
+
+**The Challenge:**
+- Transform hobbyist code to production quality
+- Improve performance, architecture, and maintainability
+- Avoid scope creep and maintain stability
+
+**The Approach:**
+1. **Comprehensive Analysis**: AI analyzed codebase, identified 6 categories of issues
+2. **Phased Planning**: Broke into 5 phases with time estimates
+3. **User Decision Points**: User chose scope (all phases vs. quick wins)
+4. **Incremental Execution**: One phase at a time with validation
+5. **Milestone Tagging**: Tagged alpha.1 and alpha.2 for progress tracking
+
+**Timeline:**
+- Phase 1: Critical Fixes (1 day) → Tests: 2→10
+- Phase 2: Performance (4 hours) → CPU: 40% reduction
+- Phase 3: Architecture (6 hours) → Async/await, 50% more CPU reduction
+- Phase 4: Error Handling (2 hours) → Graceful fallbacks
+- Phase 5: Documentation (3 hours) → Educational materials
+
+**Results:**
+- 10 hours total (vs estimated 2-3 weeks solo)
+- 85-95% CPU reduction
+- 20 comprehensive tests
+- Zero regressions
+- Complete documentation
+
+**Quote from process:**
+> "This is hobbyist-quality code that works well enough for personal use but has significant technical debt... Here's how I would improve it..."
+
+**Insight:** AI can provide frank technical assessment and execute comprehensive improvements when given structured framework and clear validation criteria.
+
+### Theme 16: Test-Driven Refactoring (Session 4 - v1.0.0)
+
+**Pattern:** Aggressive refactoring succeeded through comprehensive testing.
+
+**The Strategy:**
+- Write tests for new behavior before changing code
+- Run tests after each significant change
+- Use 100% pass rate as gate for proceeding
+- Add tests for bug fixes
+
+**Test Evolution:**
+```
+Phase 1: 2 → 10 tests (config validation, path detection)
+Phase 2: 10 → 16 tests (image operations, caching)
+Phase 3: 16 → 18 tests (theme parsing)
+Phase 4: 18 → 20 tests (fallback icons)
+```
+
+**Critical moment:**
+When converting to async (150-line function rewrite), existing tests caught issues immediately. Confidence to make aggressive changes came from test coverage.
+
+**Insight:** Tests aren't just verification—they enable aggressive refactoring by providing safety net. 10x test increase enabled 10x scope increase.
+
+### Theme 17: Performance Optimization Through Code Analysis (Session 4 - v1.0.0)
+
+**Pattern:** AI identified bottlenecks without traditional profiling tools.
+
+**Discovery Method:**
+1. Analyzed hot path code (render loop)
+2. Identified repeated operations (image::load_from_memory)
+3. Calculated frequency (60 fps × multiple sprites)
+4. Estimated impact (~240 operations/second)
+
+**Solution Hierarchy:**
+- **Phase 1**: Cache decoded PNGs (eliminate 60 decodes/sec)
+- **Phase 2**: Cache recolored sprites (eliminate 240 recolors/sec)
+- **Phase 3**: Eliminate polling (eliminate 60 wake-ups/sec)
+
+**Results:**
+```
+Operation          | Before | After   | Reduction
+-------------------|--------|---------|----------
+PNG decodes/sec    | 60     | 0       | 100%
+Recolor ops/sec    | 240    | ~0      | 99.9%
+Polling wakeups/sec| 60     | 0       | 100%
+CPU usage          | 1.5-2% | 0.1-0.2%| 85-95%
+```
+
+**Insight:** AI can perform effective "mental profiling" by analyzing code patterns and estimating operation frequency. Traditional profiling tools not always needed for obvious bottlenecks.
+
+---
+
+### Updated Recommendations (Session 4 - v1.0.0 Refactoring)
+
+Building on previous sessions:
+
+14. **Plan before executing** - Multi-phase planning prevents scope creep
+15. **Test aggressively** - Tests enable confidence for major changes
+16. **Profile through analysis** - Code inspection can reveal bottlenecks
+17. **Commit granularly** - One commit per major change aids bisection
+18. **Tag milestones** - Progress markers help manage long refactorings
+19. **Document decisions** - Explain "why", not just "what"
+20. **Incremental validation** - Test and review after each phase
+
+---
+
 ## Transcript Access
 
 Complete conversation transcripts are available in the [transcripts/](transcripts/) directory for researchers and developers interested in the detailed dialogue patterns.
+
+**Sessions:**
+- Session 1: Initial development (v0.1.0 - v0.3.0)
+- Session 2: Flatpak compatibility (v0.3.x)
+- Session 3: Cross-distribution testing
+- **Session 4: v1.0.0 refactoring** (5 phases, 10 hours) - See AI_DEVELOPMENT_CASE_STUDY.md for detailed analysis

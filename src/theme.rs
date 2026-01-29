@@ -14,10 +14,7 @@ pub struct ThemeColors {
 
 impl Default for ThemeColors {
     fn default() -> Self {
-        Self {
-            foreground: (200, 200, 200),
-            is_dark: true,
-        }
+        Self { foreground: (200, 200, 200), is_dark: true }
     }
 }
 
@@ -50,17 +47,13 @@ fn try_manual_theme_parsing() -> Result<ThemeColors, Box<dyn std::error::Error>>
         is_dark
     );
 
-    Ok(ThemeColors {
-        foreground,
-        is_dark,
-    })
+    Ok(ThemeColors { foreground, is_dark })
 }
 
 /// Check if dark mode is enabled (manual method)
 fn is_dark_mode_manual() -> Result<bool, Box<dyn std::error::Error>> {
-    let config_dir = dirs::home_dir()
-        .ok_or("Cannot determine home directory")?
-        .join(".config/cosmic");
+    let config_dir =
+        dirs::home_dir().ok_or("Cannot determine home directory")?.join(".config/cosmic");
 
     let theme_path = config_dir.join("com.system76.CosmicTheme.Mode/v1/is_dark");
 
@@ -70,9 +63,8 @@ fn is_dark_mode_manual() -> Result<bool, Box<dyn std::error::Error>> {
 
 /// Get theme foreground color (manual method)
 fn get_theme_color_manual(is_dark: bool) -> Result<(u8, u8, u8), Box<dyn std::error::Error>> {
-    let config_dir = dirs::home_dir()
-        .ok_or("Cannot determine home directory")?
-        .join(".config/cosmic");
+    let config_dir =
+        dirs::home_dir().ok_or("Cannot determine home directory")?.join(".config/cosmic");
 
     let mode = if is_dark { "Dark" } else { "Light" };
     let theme_dir = config_dir.join(format!("com.system76.CosmicTheme.{}/v1", mode));

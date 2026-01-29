@@ -301,11 +301,8 @@ impl Resources {
         }
 
         // Recolor all sprites with new theme color
-        self.cat_frames_colored = self
-            .cat_frames_original
-            .iter()
-            .map(|img| recolor_image(img, new_color))
-            .collect();
+        self.cat_frames_colored =
+            self.cat_frames_original.iter().map(|img| recolor_image(img, new_color)).collect();
 
         self.cat_sleep_colored = recolor_image(&self.cat_sleep_original, new_color);
 
@@ -387,9 +384,7 @@ impl RunkatTray {
     /// in the main loop via `update_colors()`, not during rendering.
     fn build_icon(&self) -> Option<RgbaImage> {
         // Get cached colored cat frame (no recoloring!)
-        let cat = self
-            .resources
-            .get_cat_frame(self.current_frame, self.is_sleeping);
+        let cat = self.resources.get_cat_frame(self.current_frame, self.is_sleeping);
 
         // Only show percentage if user enabled AND panel is medium or larger AND cat is awake
         let should_show_pct =
@@ -455,9 +450,7 @@ impl Tray for RunkatTray {
     }
 
     fn icon_theme_path(&self) -> String {
-        dirs::data_dir()
-            .map(|p| p.join("icons").to_string_lossy().to_string())
-            .unwrap_or_default()
+        dirs::data_dir().map(|p| p.join("icons").to_string_lossy().to_string()).unwrap_or_default()
     }
 
     fn icon_name(&self) -> String {
@@ -480,11 +473,7 @@ impl Tray for RunkatTray {
             argb_data.push(b);
         }
 
-        vec![ksni::Icon {
-            width: img.width() as i32,
-            height: img.height() as i32,
-            data: argb_data,
-        }]
+        vec![ksni::Icon { width: img.width() as i32, height: img.height() as i32, data: argb_data }]
     }
 
     fn title(&self) -> String {
@@ -590,12 +579,9 @@ async fn run_tray_inner() -> Result<TrayExitReason, String> {
     let is_sandboxed = std::path::Path::new("/.flatpak-info").exists();
     tracing::debug!("Spawning tray service (sandboxed: {})", is_sandboxed);
 
-    let handle = if is_sandboxed {
-        tray.disable_dbus_name(true).spawn().await
-    } else {
-        tray.spawn().await
-    }
-    .map_err(|e| format!("Failed to spawn tray: {}", e))?;
+    let handle =
+        if is_sandboxed { tray.disable_dbus_name(true).spawn().await } else { tray.spawn().await }
+            .map_err(|e| format!("Failed to spawn tray: {}", e))?;
 
     tracing::info!("Tray service started successfully");
 

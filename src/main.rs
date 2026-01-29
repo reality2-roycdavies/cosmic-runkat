@@ -44,10 +44,7 @@ fn spawn_tray_background() -> Result<(), std::io::Error> {
             .map(|_| ())
     } else {
         // Native: spawn directly
-        Command::new(env::current_exe()?)
-            .arg("--tray")
-            .spawn()
-            .map(|_| ())
+        Command::new(env::current_exe()?).arg("--tray").spawn().map(|_| ())
     }
 }
 

@@ -533,3 +533,83 @@ While the Flatpak preparation is largely the same, cosmic-runkat has a few speci
    ```
 
 3. **No Timer Needed:** Unlike cosmic-bing-wallpaper, cosmic-runkat doesn't need internal timer functionality - it just monitors CPU continuously while running
+
+---
+
+## The v1.0.0 Refactoring Journey
+
+### From Hobbyist to Production Quality
+
+In January 2026, cosmic-runkat underwent a comprehensive refactoring to transform it from functional hobbyist code to production-ready quality. This 10-hour AI-assisted process is extensively documented as a case study in modern software development.
+
+### The Five Phases
+
+**Phase 1: Critical Fixes & Foundations** (1 day)
+- Fixed config path Flatpak inconsistency bug
+- Added config validation with auto-fallback
+- Created infrastructure modules (paths, constants, error)
+- Lockfile race condition fixes
+- Tests: 2 → 10
+
+**Phase 2: Performance Optimizations** (1 day)
+- Implemented two-level image caching (decode + recolor)
+- Eliminated ~240 recolor operations per second
+- Optimized hot path operations
+- CPU usage: ~0.5-1.0% → ~0.2-0.6%
+- Tests: 10 → 16
+
+**Phase 3: Async Architecture** (2-3 days)
+- Converted from polling to event-driven with tokio::select!
+- Eliminated 16ms busy-wait loop
+- Native ksni async API integration
+- Structured logging with tracing
+- Theme abstraction module
+- CPU usage: ~0.2-0.6% → ~0.1-0.2%
+- Memory: 298MB → 161MB (46% reduction)
+- Tests: 16 → 18
+
+**Phase 4: Error Handling & Robustness** (1 day)
+- Fallback icon generation if resources fail
+- Process existence check for lockfiles
+- User-friendly error messages with troubleshooting tips
+- Graceful degradation everywhere
+- Tests: 18 → 20
+
+**Phase 5: Testing, Documentation & Educational Materials** (1 day)
+- CI/CD pipeline setup
+- Comprehensive documentation updates
+- AI development case study
+- Architecture documentation
+- Final polish
+
+### Key Outcomes
+
+**Performance:**
+- CPU: 85-95% reduction (1.5-2.0% → 0.1-0.2%)
+- Memory: 46% reduction (VSZ)
+- Eliminated all polling loops
+- Event-driven architecture
+
+**Code Quality:**
+- Tests: 2 → 20 (10x increase)
+- Modules: 5 → 8 (better organization)
+- Error handling: Silent → Comprehensive
+- Logging: println! → tracing
+- Documentation: Basic → Extensive
+
+**Architecture:**
+- Threading: Mixed → Pure async
+- Events: Polling → tokio::select!
+- Errors: String → Typed (thiserror)
+- Coupling: Tight → Abstracted
+
+### Educational Value
+
+This refactoring serves as a comprehensive case study in:
+- AI-assisted software transformation
+- Rust async/await patterns
+- Performance optimization techniques
+- Test-driven refactoring
+- Progressive enhancement methodology
+
+**Full details:** [AI_DEVELOPMENT_CASE_STUDY.md](AI_DEVELOPMENT_CASE_STUDY.md)

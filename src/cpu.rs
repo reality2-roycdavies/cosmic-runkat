@@ -23,11 +23,7 @@ impl CpuMonitor {
     /// Create a new CPU monitor
     pub fn new() -> Self {
         let (tx, rx) = watch::channel(0.0);
-        Self {
-            tx,
-            rx,
-            stop_flag: Arc::new(AtomicBool::new(false)),
-        }
+        Self { tx, rx, stop_flag: Arc::new(AtomicBool::new(false)) }
     }
 
     /// Start the monitoring thread

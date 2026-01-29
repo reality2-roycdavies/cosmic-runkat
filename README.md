@@ -10,9 +10,17 @@ A cute running cat CPU indicator for the [COSMIC desktop environment](https://sy
 
 This project was developed as an **educational exercise** in collaborative AI-assisted software development, following the same approach used for [cosmic-bing-wallpaper](https://github.com/reality2-roycdavies/cosmic-bing-wallpaper). The entire application was built through iterative conversation between a human developer and Claude (Anthropic's AI assistant) using Claude Code.
 
-**Development time:** Approximately 3 hours from initial concept to working release, plus ~2 hours for Flatpak refactoring.
+**Development timeline:**
+- **v0.1.0 - v0.3.4**: Initial development (~5 hours) - Creating the application
+- **v1.0.0**: Production refactor (~10 hours) - Transforming to production quality
 
-The development process, including all conversations and design decisions, has been documented in the [docs/](docs/) directory for anyone interested in understanding how AI-assisted development works in practice.
+The complete development process, including conversations, design decisions, and technical analysis, has been documented in the [docs/](docs/) directory. This includes:
+- Full conversation transcripts
+- Thematic analysis of AI collaboration patterns
+- Technical development notes
+- **NEW**: Complete v1.0.0 refactoring case study (5 phases, hobbyist → production)
+
+**See [docs/AI_DEVELOPMENT_CASE_STUDY.md](docs/AI_DEVELOPMENT_CASE_STUDY.md) for a detailed analysis of the v1.0.0 refactoring process.**
 
 ### What the Thematic Analysis Revealed
 
@@ -138,27 +146,62 @@ Settings can also be changed via the Settings app (right-click tray icon > Setti
 ## Architecture
 
 ```
-cosmic-runkat
+cosmic-runkat (v1.0.0)
 ├── src/
 │   ├── main.rs        # Entry point, CLI parsing, autostart setup
-│   ├── tray.rs        # System tray with animated icon
+│   ├── tray.rs        # Async event-driven system tray
 │   ├── settings.rs    # libcosmic settings app
-│   ├── config.rs      # Configuration management
-│   └── cpu.rs         # CPU monitoring
+│   ├── config.rs      # Configuration with validation
+│   ├── cpu.rs         # CPU monitoring with watch channels
+│   ├── theme.rs       # Theme detection abstraction (NEW in 1.0)
+│   ├── paths.rs       # Flatpak-aware path resolution (NEW in 1.0)
+│   ├── constants.rs   # Application-wide constants (NEW in 1.0)
+│   └── error.rs       # Error types (NEW in 1.0)
 ├── resources/         # PNG sprites (cat frames, digits)
 ├── docs/              # Development documentation
-└── install.sh         # Installation script
+│   ├── AI_DEVELOPMENT_CASE_STUDY.md  # v1.0.0 refactoring (NEW)
+│   ├── DEVELOPMENT.md                # Technical notes
+│   ├── THEMATIC_ANALYSIS.md          # AI collaboration patterns
+│   └── transcripts/                  # Complete conversations
+├── MIGRATION.md       # Upgrade guide 0.3.x → 1.0.0 (NEW)
+└── flathub/           # Flatpak packaging
 ```
+
+**v1.0.0 Improvements:**
+- Async event-driven architecture (tokio::select!)
+- 85-95% CPU usage reduction
+- Comprehensive error handling
+- 20 unit tests (was 2)
+- Structured logging with tracing
+- Production-ready code quality
 
 ## Development Documentation
 
-The [docs/](docs/) directory contains:
+The [docs/](docs/) directory contains comprehensive educational materials:
+
+- **AI_DEVELOPMENT_CASE_STUDY.md**: Complete v1.0.0 refactoring case study (NEW)
+  - 5-phase transformation from hobbyist to production quality
+  - Performance analysis (85-95% CPU reduction)
+  - Technical decision rationale
+  - AI collaboration patterns
+  - Lessons learned
 
 - **DEVELOPMENT.md**: Technical notes and learnings from the development process
-- **THEMATIC_ANALYSIS.md**: 14 themes identified across 3 development sessions
+  - System tray implementation
+  - Dynamic icon composition
+  - CPU monitoring strategies
+  - COSMIC integration techniques
+
+- **THEMATIC_ANALYSIS.md**: 14 themes identified across development sessions
+  - Iterative visual refinement
+  - Platform-specific discovery
+  - Cross-project learning
+  - AI-human collaboration patterns
+
 - **transcripts/**: Complete conversation transcripts for educational purposes
   - `session-01.md`: Initial development through final polish
   - `session-02.md`: Cross-distribution Flatpak testing on Pop!_OS
+  - `session-03.md`: v1.0.0 refactoring (5 phases) - Coming soon
 
 ## Uninstalling
 
