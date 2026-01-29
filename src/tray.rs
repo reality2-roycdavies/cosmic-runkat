@@ -4,6 +4,9 @@
 //! The animation speed varies based on CPU usage.
 //! CPU percentage is dynamically composited onto the icon.
 
+use crate::config::Config;
+use crate::constants::*;
+use crate::cpu::CpuMonitor;
 use image::RgbaImage;
 use ksni::Tray;
 // Import the blocking TrayMethods trait for sync spawn/disable_dbus_name
@@ -17,22 +20,6 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::channel;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-
-use crate::config::Config;
-use crate::cpu::CpuMonitor;
-
-/// Number of animation frames in the run cycle
-const RUN_FRAMES: u8 = 10;
-
-/// Cat size (square)
-const CAT_SIZE: u32 = 32;
-
-/// Digit size (width x height)
-const DIGIT_WIDTH: u32 = 8;
-const DIGIT_HEIGHT: u32 = 12;
-
-/// Spacing between cat and percentage
-const CAT_PCT_SPACING: u32 = 2;
 
 /// Get the host's COSMIC config directory
 /// In Flatpak, dirs::config_dir() returns the sandboxed config, not the host's
@@ -469,7 +456,7 @@ impl Tray for RunkatTray {
 pub fn run_tray() -> Result<(), String> {
     // Brief delay on startup to ensure StatusNotifierWatcher is ready
     // This helps when autostarting at login before the panel is fully initialized
-    std::thread::sleep(Duration::from_secs(2));
+    std::thread::sleep(STARTUP_DELAY);
 
     // Outer retry loop - restarts tray after suspend/resume
     loop {
@@ -478,7 +465,7 @@ pub fn run_tray() -> Result<(), String> {
             TrayExitReason::SuspendResume => {
                 println!("Detected suspend/resume, restarting tray...");
                 // Brief delay before restarting to let D-Bus settle
-                std::thread::sleep(Duration::from_millis(500));
+                std::thread::sleep(SUSPEND_RESTART_DELAY);
                 continue;
             }
         }
@@ -510,7 +497,7 @@ fn run_tray_inner() -> Result<TrayExitReason, String> {
 
     // Start CPU monitoring
     let cpu_monitor = CpuMonitor::new();
-    cpu_monitor.start(Duration::from_millis(500));
+    cpu_monitor.start(CPU_SAMPLE_INTERVAL);
 
     // Set up file watcher for theme, panel size, and app config changes
     let (config_tx, config_rx) = channel();
@@ -560,7 +547,6 @@ fn run_tray_inner() -> Result<TrayExitReason, String> {
     let mut config = config;
     let mut last_config_check = Instant::now();
     let mut tracked_theme_mtime = get_theme_files_mtime();
-    const CONFIG_CHECK_INTERVAL: Duration = Duration::from_millis(500);
 
     // Animation state
     let mut current_frame: u8 = 0;
@@ -568,8 +554,7 @@ fn run_tray_inner() -> Result<TrayExitReason, String> {
     let mut current_cpu: f32 = 0.0;
     let mut last_raw_cpu: f32 = -1.0;
 
-    // CPU smoothing - moving average over last 10 actual readings (5 seconds at 500ms sample rate)
-    const CPU_SAMPLE_COUNT: usize = 10;
+    // CPU smoothing - moving average over last N actual readings (5 seconds at 500ms sample rate)
     let mut cpu_samples: VecDeque<f32> = VecDeque::with_capacity(CPU_SAMPLE_COUNT);
 
     // Track time for suspend/resume detection
@@ -581,10 +566,10 @@ fn run_tray_inner() -> Result<TrayExitReason, String> {
         // If the sleep took much longer than expected (>5 seconds vs expected 16ms),
         // we likely woke from suspend and should restart to recover D-Bus connections
         let elapsed = loop_start.elapsed();
-        if elapsed > Duration::from_secs(5) {
+        if elapsed > SUSPEND_RESUME_THRESHOLD {
             println!("Time jump detected ({:?}), likely suspend/resume", elapsed);
             handle.shutdown();
-            std::thread::sleep(Duration::from_millis(100));
+            std::thread::sleep(DBUS_CLEANUP_DELAY);
             crate::remove_tray_lockfile();
             return Ok(TrayExitReason::SuspendResume);
         }
@@ -613,7 +598,7 @@ fn run_tray_inner() -> Result<TrayExitReason, String> {
         };
 
         // Only update displayed value if change is significant
-        if (smoothed_cpu - current_cpu).abs() > 0.5 {
+        if (smoothed_cpu - current_cpu).abs() > CPU_DISPLAY_THRESHOLD {
             current_cpu = smoothed_cpu;
         }
 
@@ -704,7 +689,7 @@ fn run_tray_inner() -> Result<TrayExitReason, String> {
 
     // Small delay to ensure ksni's D-Bus resources are released
     // Without this, the StatusNotifierItem might briefly appear "stuck"
-    std::thread::sleep(std::time::Duration::from_millis(100));
+    std::thread::sleep(DBUS_CLEANUP_DELAY);
 
     // Clean up lockfile on exit
     crate::remove_tray_lockfile();

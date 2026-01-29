@@ -66,8 +66,13 @@ impl Application for SettingsApp {
         match message {
             Message::SleepThresholdChanged(value) => {
                 self.config.sleep_threshold = value;
-                // Save immediately so tray updates
-                let _ = self.config.save();
+                // Validate and save immediately so tray updates
+                if let Err(e) = self.config.validate() {
+                    eprintln!("Warning: Invalid config change: {}", e);
+                    // Optionally revert or show error to user in UI
+                } else {
+                    let _ = self.config.save();
+                }
             }
             Message::ShowPercentageToggled(value) => {
                 self.config.show_percentage = value;
