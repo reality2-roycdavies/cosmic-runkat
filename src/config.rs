@@ -28,8 +28,8 @@ impl Default for Config {
     fn default() -> Self {
         Self {
             sleep_threshold: 5.0,
-            max_fps: 15.0,  // Faster max animation
-            min_fps: 2.0,   // Faster min animation
+            max_fps: 15.0, // Faster max animation
+            min_fps: 2.0,  // Faster min animation
             show_percentage: true,
         }
     }
@@ -49,8 +49,17 @@ impl Config {
         let path = Self::config_path();
         if path.exists() {
             match fs::read_to_string(&path) {
-                Ok(content) => serde_json::from_str(&content).unwrap_or_default(),
-                Err(_) => Self::default(),
+                Ok(content) => match serde_json::from_str(&content) {
+                    Ok(config) => config,
+                    Err(e) => {
+                        eprintln!("Failed to parse config file: {}", e);
+                        Self::default()
+                    }
+                },
+                Err(e) => {
+                    eprintln!("Failed to read config file: {}", e);
+                    Self::default()
+                }
             }
         } else {
             Self::default()

@@ -9,11 +9,11 @@ use ksni::Tray;
 // Import the blocking TrayMethods trait for sync spawn/disable_dbus_name
 use ksni::blocking::TrayMethods as BlockingTrayMethods;
 use notify::{Config as NotifyConfig, RecommendedWatcher, RecursiveMode, Watcher};
+use std::collections::VecDeque;
 use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::collections::VecDeque;
 use std::sync::mpsc::channel;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -115,15 +115,15 @@ fn get_theme_color() -> (u8, u8, u8) {
 /// Preserves alpha channel, replaces RGB with theme color
 fn recolor_image(img: &RgbaImage, color: (u8, u8, u8)) -> RgbaImage {
     let (r, g, b) = color;
-    let mut result = img.clone();
-    for pixel in result.pixels_mut() {
-        if pixel[3] > 0 {
+    let mut result = img.to_owned();
+    result
+        .pixels_mut()
+        .filter(|pixel| pixel[3] > 0)
+        .for_each(|pixel| {
             pixel[0] = r;
             pixel[1] = g;
             pixel[2] = b;
-            // Keep original alpha
-        }
-    }
+        });
     result
 }
 
@@ -157,11 +157,16 @@ fn is_dark_mode() -> bool {
     // Fall back to freedesktop portal
     if let Ok(output) = Command::new("gdbus")
         .args([
-            "call", "--session",
-            "--dest", "org.freedesktop.portal.Desktop",
-            "--object-path", "/org/freedesktop/portal/desktop",
-            "--method", "org.freedesktop.portal.Settings.Read",
-            "org.freedesktop.appearance", "color-scheme"
+            "call",
+            "--session",
+            "--dest",
+            "org.freedesktop.portal.Desktop",
+            "--object-path",
+            "/org/freedesktop/portal/desktop",
+            "--method",
+            "org.freedesktop.portal.Settings.Read",
+            "org.freedesktop.appearance",
+            "color-scheme",
         ])
         .output()
     {
@@ -252,19 +257,19 @@ impl RunkatTray {
         if self.is_sleeping {
             include_bytes!("../resources/cat-sleep.png")
         } else {
-            match self.current_frame {
-                0 => include_bytes!("../resources/cat-run-0.png"),
-                1 => include_bytes!("../resources/cat-run-1.png"),
-                2 => include_bytes!("../resources/cat-run-2.png"),
-                3 => include_bytes!("../resources/cat-run-3.png"),
-                4 => include_bytes!("../resources/cat-run-4.png"),
-                5 => include_bytes!("../resources/cat-run-5.png"),
-                6 => include_bytes!("../resources/cat-run-6.png"),
-                7 => include_bytes!("../resources/cat-run-7.png"),
-                8 => include_bytes!("../resources/cat-run-8.png"),
-                9 => include_bytes!("../resources/cat-run-9.png"),
-                _ => include_bytes!("../resources/cat-run-0.png"),
-            }
+            const CAT_FRAMES: [&[u8]; 10] = [
+                include_bytes!("../resources/cat-run-0.png"),
+                include_bytes!("../resources/cat-run-1.png"),
+                include_bytes!("../resources/cat-run-2.png"),
+                include_bytes!("../resources/cat-run-3.png"),
+                include_bytes!("../resources/cat-run-4.png"),
+                include_bytes!("../resources/cat-run-5.png"),
+                include_bytes!("../resources/cat-run-6.png"),
+                include_bytes!("../resources/cat-run-7.png"),
+                include_bytes!("../resources/cat-run-8.png"),
+                include_bytes!("../resources/cat-run-9.png"),
+            ];
+            CAT_FRAMES[self.current_frame as usize % CAT_FRAMES.len()]
         }
     }
 
@@ -279,17 +284,14 @@ impl RunkatTray {
         let cat = recolor_image(&cat_raw, theme_color);
 
         // Only show percentage if user enabled AND panel is medium or larger AND cat is awake
-        let should_show_pct = self.show_percentage && self.panel_medium_or_larger && !self.is_sleeping;
+        let should_show_pct =
+            self.show_percentage && self.panel_medium_or_larger && !self.is_sleeping;
 
         if !should_show_pct {
             // For small panels, scale up the cat to use more space (48x48)
             if !self.panel_medium_or_larger {
-                let scaled = image::imageops::resize(
-                    &cat,
-                    48,
-                    48,
-                    image::imageops::FilterType::Nearest,
-                );
+                let scaled =
+                    image::imageops::resize(&cat, 48, 48, image::imageops::FilterType::Nearest);
                 return Some(scaled);
             }
             // Just return the cat if no percentage
@@ -482,8 +484,7 @@ fn run_tray_inner() -> Result<TrayExitReason, String> {
     let (config_tx, config_rx) = channel();
     let _watcher = {
         let tx = config_tx.clone();
-        let notify_config = NotifyConfig::default()
-            .with_poll_interval(Duration::from_secs(1));
+        let notify_config = NotifyConfig::default().with_poll_interval(Duration::from_secs(1));
         let mut watcher: Result<RecommendedWatcher, _> = Watcher::new(
             move |res: Result<notify::Event, _>| {
                 if let Ok(event) = res {
@@ -633,7 +634,7 @@ fn run_tray_inner() -> Result<TrayExitReason, String> {
         if frame_changed || config_changed || (new_cpu - current_cpu).abs() > 1.0 {
             handle.update(|tray| {
                 tray.current_frame = current_frame;
-                tray.cpu_percent = display_cpu;  // Use rounded value for display
+                tray.cpu_percent = display_cpu; // Use rounded value for display
                 tray.is_sleeping = is_sleeping;
                 if config_changed {
                     tray.panel_medium_or_larger = is_panel_medium_or_larger();
@@ -651,7 +652,8 @@ fn run_tray_inner() -> Result<TrayExitReason, String> {
         }
 
         // Refresh lockfile timestamp every 30 seconds to indicate we're still running
-        static LOCKFILE_REFRESH: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        static LOCKFILE_REFRESH: std::sync::atomic::AtomicU64 =
+            std::sync::atomic::AtomicU64::new(0);
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_secs())

@@ -53,7 +53,9 @@ impl CpuMonitor {
                             Ok(cpu_load) => {
                                 // Calculate total CPU usage (everything except idle)
                                 let usage = (1.0 - cpu_load.idle) * 100.0;
-                                let _ = tx.send(usage);
+                                if let Err(e) = tx.send(usage) {
+                                    eprintln!("Failed to send CPU update: {}", e);
+                                }
                             }
                             Err(e) => {
                                 eprintln!("CPU measurement error: {}", e);
