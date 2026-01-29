@@ -59,6 +59,31 @@ fn get_theme_color() -> (u8, u8, u8) {
     theme::get_cosmic_theme_colors().foreground
 }
 
+/// Create a fallback icon when resources fail to load
+///
+/// Generates a simple filled circle as a minimal tray icon.
+/// Used as graceful degradation when sprite files cannot be loaded.
+fn create_fallback_icon(size: u32, color: (u8, u8, u8)) -> RgbaImage {
+    let mut img = RgbaImage::new(size, size);
+    let (r, g, b) = color;
+
+    // Draw a simple filled circle
+    let center = size as f32 / 2.0;
+    let radius = size as f32 / 2.5;
+
+    for (x, y, pixel) in img.enumerate_pixels_mut() {
+        let dx = x as f32 - center;
+        let dy = y as f32 - center;
+        let dist = (dx * dx + dy * dy).sqrt();
+
+        if dist <= radius {
+            *pixel = image::Rgba([r, g, b, 255]);
+        }
+    }
+
+    img
+}
+
 /// Recolor an RGBA image to use the theme color
 ///
 /// Preserves alpha channel, replaces RGB with theme color.
@@ -232,6 +257,39 @@ impl Resources {
         })
     }
 
+    /// Load resources with fallback on failure
+    ///
+    /// Returns minimal fallback resources if sprite loading fails,
+    /// ensuring the tray can always start even if resources are corrupted.
+    fn load_or_fallback() -> Self {
+        match Self::load() {
+            Some(resources) => {
+                tracing::debug!("Loaded sprite resources successfully");
+                resources
+            }
+            None => {
+                tracing::error!("Failed to load sprite resources, using fallback");
+                Self::create_fallback()
+            }
+        }
+    }
+
+    /// Create minimal fallback resources
+    fn create_fallback() -> Self {
+        let default_color = (200, 200, 200);
+        let fallback_icon = create_fallback_icon(CAT_SIZE, default_color);
+
+        Self {
+            cat_frames_original: vec![fallback_icon.clone(); RUN_FRAMES as usize],
+            cat_sleep_original: fallback_icon.clone(),
+            digits_original: std::collections::HashMap::new(), // No digits in fallback
+            last_theme_color: Some(default_color),
+            cat_frames_colored: vec![fallback_icon.clone(); RUN_FRAMES as usize],
+            cat_sleep_colored: fallback_icon.clone(),
+            digits_colored: std::collections::HashMap::new(),
+        }
+    }
+
     /// Update cached recolored images if theme changed
     ///
     /// Only recolors sprites when theme color actually changes.
@@ -304,14 +362,15 @@ pub struct RunkatTray {
 }
 
 impl RunkatTray {
-    pub fn new(should_quit: Arc<AtomicBool>, show_percentage: bool) -> Option<Self> {
-        let mut resources = Resources::load()?;
+    pub fn new(should_quit: Arc<AtomicBool>, show_percentage: bool) -> Self {
+        // Use load_or_fallback to ensure we always succeed
+        let mut resources = Resources::load_or_fallback();
 
         // Initialize with current theme colors
         let initial_color = get_theme_color();
         resources.update_colors(initial_color);
 
-        Some(Self {
+        Self {
             should_quit,
             current_frame: 0,
             cpu_percent: 0.0,
@@ -319,7 +378,7 @@ impl RunkatTray {
             show_percentage,
             panel_medium_or_larger: is_panel_medium_or_larger(),
             resources,
-        })
+        }
     }
 
     /// Build the composite icon with cat and optionally CPU percentage beside it
@@ -524,8 +583,7 @@ async fn run_tray_inner() -> Result<TrayExitReason, String> {
     // Load config
     let config = Config::load();
 
-    let tray = RunkatTray::new(should_quit.clone(), config.show_percentage)
-        .ok_or_else(|| "Failed to load tray resources".to_string())?;
+    let tray = RunkatTray::new(should_quit.clone(), config.show_percentage);
 
     // Spawn the tray service (ASYNC API!)
     // In Flatpak, disable D-Bus well-known name to avoid PID conflicts
@@ -831,5 +889,33 @@ mod tests {
 
         // Invalid character should return None
         assert!(resources.get_digit('X').is_none());
+    }
+
+    #[test]
+    fn test_fallback_icon_creation() {
+        let icon = create_fallback_icon(32, (200, 200, 200));
+        assert_eq!(icon.width(), 32);
+        assert_eq!(icon.height(), 32);
+
+        // Center should be colored (within radius)
+        let center_pixel = icon.get_pixel(16, 16);
+        assert_eq!(center_pixel[0], 200);
+        assert_eq!(center_pixel[1], 200);
+        assert_eq!(center_pixel[2], 200);
+        assert_eq!(center_pixel[3], 255); // Opaque
+
+        // Corners should be transparent
+        let corner_pixel = icon.get_pixel(0, 0);
+        assert_eq!(corner_pixel[3], 0);
+    }
+
+    #[test]
+    fn test_resources_load_or_fallback() {
+        // Should always succeed (either loads or creates fallback)
+        let resources = Resources::load_or_fallback();
+
+        // Should have at least fallback resources
+        assert!(!resources.cat_frames_original.is_empty());
+        assert_eq!(resources.cat_frames_original.len(), RUN_FRAMES as usize);
     }
 }

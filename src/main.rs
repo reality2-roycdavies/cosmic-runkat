@@ -82,21 +82,48 @@ fn print_version() {
     println!("cosmic-runkat {}", env!("CARGO_PKG_VERSION"));
 }
 
+/// Check if a process is actually running (non-Flatpak only)
+///
+/// In Flatpak, PID namespaces prevent us from checking /proc,
+/// so we return true (assume running if lockfile exists).
+fn is_process_running(pid: u32) -> bool {
+    if is_flatpak() {
+        // Can't check in Flatpak due to PID namespaces
+        return true;
+    }
+
+    std::path::Path::new(&format!("/proc/{}", pid)).exists()
+}
+
 /// Check if a lockfile indicates an active process
 ///
-/// Checks existence and modification time (to detect stale locks from crashes/restarts)
+/// Checks PID existence (non-Flatpak) and modification time.
+/// This prevents false "already running" errors from stale lockfiles.
 fn is_lockfile_active(path: &std::path::Path) -> bool {
-    if let Ok(metadata) = fs::metadata(path) {
-        if let Ok(modified) = metadata.modified() {
-            if let Ok(elapsed) = modified.elapsed() {
-                // If lockfile was modified recently, process is likely running
-                return elapsed < LOCKFILE_STALE_THRESHOLD;
+    let metadata = match fs::metadata(path) {
+        Ok(m) => m,
+        Err(_) => return false,
+    };
+
+    // Read PID from lockfile
+    if let Ok(content) = fs::read_to_string(path) {
+        if let Ok(pid) = content.trim().parse::<u32>() {
+            // Check if process actually exists (non-Flatpak only)
+            if !is_process_running(pid) {
+                tracing::debug!("Lockfile exists but process {} not running", pid);
+                return false;
             }
         }
-        // If we can't check time, assume NOT running (conservative approach)
-        // This prevents stale lockfiles from blocking new instances
-        return false;
     }
+
+    // Check modification time
+    if let Ok(modified) = metadata.modified() {
+        if let Ok(elapsed) = modified.elapsed() {
+            return elapsed < LOCKFILE_STALE_THRESHOLD;
+        }
+    }
+
+    // If we can't verify, assume NOT running (conservative)
     false
 }
 
@@ -284,7 +311,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 tracing::info!("Starting cosmic-runkat tray");
                 println!("Starting cosmic-runkat tray...");
                 ensure_autostart();
-                tray::run_tray().map_err(|e| e.into())
+
+                match tray::run_tray() {
+                    Ok(_) => Ok(()),
+                    Err(e) => {
+                        tracing::error!("Tray error: {}", e);
+                        eprintln!("\n❌ cosmic-runkat tray failed to start:");
+                        eprintln!("   {}", e);
+                        eprintln!("\n💡 Troubleshooting tips:");
+                        eprintln!("   - Ensure COSMIC panel is running");
+                        eprintln!("   - Try: systemctl --user restart cosmic-panel");
+                        eprintln!(
+                            "   - Check logs: RUST_LOG=cosmic_runkat=debug cosmic-runkat --tray"
+                        );
+                        Err(e.into())
+                    }
+                }
             }
             "-s" | "--settings" => {
                 // Clean up any stale lockfiles from previous sessions
