@@ -15,6 +15,7 @@ mod cpu;
 mod error;
 mod paths;
 mod settings;
+mod theme;
 mod tray;
 
 use constants::*;

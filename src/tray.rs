@@ -7,6 +7,7 @@
 use crate::config::Config;
 use crate::constants::*;
 use crate::cpu::CpuMonitor;
+use crate::theme;
 use image::RgbaImage;
 use ksni::Tray;
 // Using native async API (Phase 3)
@@ -53,54 +54,9 @@ fn get_theme_files_mtime() -> Option<std::time::SystemTime> {
 }
 
 /// Parse a color from COSMIC theme RON format
-fn parse_color_from_ron(content: &str, color_name: &str) -> Option<(u8, u8, u8)> {
-    // Basic parser for COSMIC theme RON
-    // Looks for `color_name: ( red: X, green: Y, blue: Z ... )`
-
-    // Find "color_name:"
-    let key = format!("{}:", color_name);
-    let rest = content.split(&key).nth(1)?;
-
-    // Find the content inside the next parenthesis group (...)
-    let start = rest.find('(')?;
-    let end = rest[start..].find(')')?;
-    let block = &rest[start + 1..start + end]; // content inside ( )
-
-    let extract = |name: &str| -> Option<f32> {
-        // Look for "name: value" or "name:value"
-        let name_key = format!("{}:", name);
-        let val_part = block.split(&name_key).nth(1)?;
-        // Take until comma or end
-        let val_str = val_part.split(',').next()?.trim();
-        val_str.parse().ok()
-    };
-
-    let r = extract("red")?;
-    let g = extract("green")?;
-    let b = extract("blue")?;
-
-    Some((
-        (r.clamp(0.0, 1.0) * 255.0) as u8,
-        (g.clamp(0.0, 1.0) * 255.0) as u8,
-        (b.clamp(0.0, 1.0) * 255.0) as u8,
-    ))
-}
-
-/// Get theme color for the tray icon (foreground color from background.on)
+/// Get theme color for the tray icon (uses theme module)
 fn get_theme_color() -> (u8, u8, u8) {
-    let default_color = (200, 200, 200);
-
-    let theme_dir = match cosmic_theme_dir() {
-        Some(dir) => dir,
-        None => return default_color,
-    };
-
-    let bg_path = theme_dir.join("background");
-    if let Ok(content) = fs::read_to_string(&bg_path) {
-        parse_color_from_ron(&content, "on").unwrap_or(default_color)
-    } else {
-        default_color
-    }
+    theme::get_cosmic_theme_colors().foreground
 }
 
 /// Recolor an RGBA image to use the theme color
