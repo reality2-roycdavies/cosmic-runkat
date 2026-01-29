@@ -106,18 +106,23 @@ fn get_theme_color() -> (u8, u8, u8) {
 }
 
 /// Recolor an RGBA image to use the theme color
-/// Preserves alpha channel, replaces RGB with theme color
+///
+/// Preserves alpha channel, replaces RGB with theme color.
+/// Optimized to avoid filtering overhead by checking alpha inline.
 fn recolor_image(img: &RgbaImage, color: (u8, u8, u8)) -> RgbaImage {
     let (r, g, b) = color;
-    let mut result = img.to_owned();
-    result
-        .pixels_mut()
-        .filter(|pixel| pixel[3] > 0)
-        .for_each(|pixel| {
+    let mut result = img.clone(); // More explicit than to_owned()
+
+    // Mutate in place - more efficient without intermediate filter iterator
+    for pixel in result.pixels_mut() {
+        if pixel[3] > 0 {
+            // Only recolor non-transparent pixels
             pixel[0] = r;
             pixel[1] = g;
             pixel[2] = b;
-        });
+        }
+    }
+
     result
 }
 
@@ -177,27 +182,52 @@ fn is_dark_mode() -> bool {
 }
 
 /// Composite a sprite onto a target image at the given position
+///
+/// Skips fully transparent pixels for performance.
+/// Boundary checks prevent panics when sprite extends beyond target.
 fn composite_sprite(target: &mut RgbaImage, sprite: &RgbaImage, x: u32, y: u32) {
+    let target_width = target.width();
+    let target_height = target.height();
+
     for (sx, sy, pixel) in sprite.enumerate_pixels() {
+        // Skip fully transparent pixels early
+        if pixel[3] == 0 {
+            continue;
+        }
+
         let tx = x + sx;
         let ty = y + sy;
-        if tx < target.width() && ty < target.height() && pixel[3] > 0 {
+
+        // Bounds check
+        if tx < target_width && ty < target_height {
             target.put_pixel(tx, ty, *pixel);
         }
     }
 }
 
 /// Cache for loaded image resources to avoid repeated decoding
+///
+/// Stores both original sprites and recolored versions. The recolored
+/// cache is updated only when the theme color changes, avoiding repeated
+/// recoloring operations in the render loop.
 struct Resources {
-    cat_frames: Vec<RgbaImage>,
-    cat_sleep: RgbaImage,
-    digits: std::collections::HashMap<char, RgbaImage>,
+    // Original sprites (never modified after load)
+    cat_frames_original: Vec<RgbaImage>,
+    cat_sleep_original: RgbaImage,
+    digits_original: std::collections::HashMap<char, RgbaImage>,
+
+    // Cached recolored sprites (updated only on theme change)
+    last_theme_color: Option<(u8, u8, u8)>,
+    cat_frames_colored: Vec<RgbaImage>,
+    cat_sleep_colored: RgbaImage,
+    digits_colored: std::collections::HashMap<char, RgbaImage>,
 }
 
 impl std::fmt::Debug for Resources {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Resources")
-            .field("cat_frames", &self.cat_frames.len())
+            .field("cat_frames", &self.cat_frames_original.len())
+            .field("cached_color", &self.last_theme_color)
             .finish()
     }
 }
@@ -208,9 +238,9 @@ impl Resources {
             image::load_from_memory(data).ok().map(|i| i.to_rgba8())
         };
 
-        let cat_sleep = load_img(include_bytes!("../resources/cat-sleep.png"))?;
+        let cat_sleep_original = load_img(include_bytes!("../resources/cat-sleep.png"))?;
 
-        let cat_frames = vec![
+        let cat_frames_original = vec![
             load_img(include_bytes!("../resources/cat-run-0.png"))?,
             load_img(include_bytes!("../resources/cat-run-1.png"))?,
             load_img(include_bytes!("../resources/cat-run-2.png"))?,
@@ -223,24 +253,71 @@ impl Resources {
             load_img(include_bytes!("../resources/cat-run-9.png"))?,
         ];
 
-        let mut digits = std::collections::HashMap::new();
-        digits.insert('0', load_img(include_bytes!("../resources/digit-0.png"))?);
-        digits.insert('1', load_img(include_bytes!("../resources/digit-1.png"))?);
-        digits.insert('2', load_img(include_bytes!("../resources/digit-2.png"))?);
-        digits.insert('3', load_img(include_bytes!("../resources/digit-3.png"))?);
-        digits.insert('4', load_img(include_bytes!("../resources/digit-4.png"))?);
-        digits.insert('5', load_img(include_bytes!("../resources/digit-5.png"))?);
-        digits.insert('6', load_img(include_bytes!("../resources/digit-6.png"))?);
-        digits.insert('7', load_img(include_bytes!("../resources/digit-7.png"))?);
-        digits.insert('8', load_img(include_bytes!("../resources/digit-8.png"))?);
-        digits.insert('9', load_img(include_bytes!("../resources/digit-9.png"))?);
-        digits.insert('%', load_img(include_bytes!("../resources/digit-pct.png"))?);
+        let mut digits_original = std::collections::HashMap::new();
+        digits_original.insert('0', load_img(include_bytes!("../resources/digit-0.png"))?);
+        digits_original.insert('1', load_img(include_bytes!("../resources/digit-1.png"))?);
+        digits_original.insert('2', load_img(include_bytes!("../resources/digit-2.png"))?);
+        digits_original.insert('3', load_img(include_bytes!("../resources/digit-3.png"))?);
+        digits_original.insert('4', load_img(include_bytes!("../resources/digit-4.png"))?);
+        digits_original.insert('5', load_img(include_bytes!("../resources/digit-5.png"))?);
+        digits_original.insert('6', load_img(include_bytes!("../resources/digit-6.png"))?);
+        digits_original.insert('7', load_img(include_bytes!("../resources/digit-7.png"))?);
+        digits_original.insert('8', load_img(include_bytes!("../resources/digit-8.png"))?);
+        digits_original.insert('9', load_img(include_bytes!("../resources/digit-9.png"))?);
+        digits_original.insert('%', load_img(include_bytes!("../resources/digit-pct.png"))?);
 
+        // Clone originals for initial colored cache (will be updated on first theme load)
         Some(Self {
-            cat_frames,
-            cat_sleep,
-            digits,
+            cat_frames_original: cat_frames_original.clone(),
+            cat_sleep_original: cat_sleep_original.clone(),
+            digits_original: digits_original.clone(),
+            last_theme_color: None,
+            cat_frames_colored: cat_frames_original,
+            cat_sleep_colored: cat_sleep_original,
+            digits_colored: digits_original,
         })
+    }
+
+    /// Update cached recolored images if theme changed
+    ///
+    /// Only recolors sprites when theme color actually changes.
+    /// This is called from the main loop when a theme change is detected.
+    fn update_colors(&mut self, new_color: (u8, u8, u8)) {
+        // Skip recoloring if theme color hasn't changed
+        if self.last_theme_color == Some(new_color) {
+            return;
+        }
+
+        // Recolor all sprites with new theme color
+        self.cat_frames_colored = self
+            .cat_frames_original
+            .iter()
+            .map(|img| recolor_image(img, new_color))
+            .collect();
+
+        self.cat_sleep_colored = recolor_image(&self.cat_sleep_original, new_color);
+
+        self.digits_colored = self
+            .digits_original
+            .iter()
+            .map(|(ch, img)| (*ch, recolor_image(img, new_color)))
+            .collect();
+
+        self.last_theme_color = Some(new_color);
+    }
+
+    /// Get colored cat frame (uses cache, no recoloring)
+    fn get_cat_frame(&self, frame: u8, sleeping: bool) -> &RgbaImage {
+        if sleeping {
+            &self.cat_sleep_colored
+        } else {
+            &self.cat_frames_colored[frame as usize % self.cat_frames_colored.len()]
+        }
+    }
+
+    /// Get colored digit sprite (uses cache, no recoloring)
+    fn get_digit(&self, ch: char) -> Option<&RgbaImage> {
+        self.digits_colored.get(&ch)
     }
 }
 
@@ -274,6 +351,12 @@ pub struct RunkatTray {
 
 impl RunkatTray {
     pub fn new(should_quit: Arc<AtomicBool>, show_percentage: bool) -> Option<Self> {
+        let mut resources = Resources::load()?;
+
+        // Initialize with current theme colors
+        let initial_color = get_theme_color();
+        resources.update_colors(initial_color);
+
         Some(Self {
             should_quit,
             current_frame: 0,
@@ -281,23 +364,19 @@ impl RunkatTray {
             is_sleeping: true,
             show_percentage,
             panel_medium_or_larger: is_panel_medium_or_larger(),
-            resources: Resources::load()?,
+            resources,
         })
     }
 
     /// Build the composite icon with cat and optionally CPU percentage beside it
+    ///
+    /// Uses cached recolored sprites for performance. Theme color updates happen
+    /// in the main loop via `update_colors()`, not during rendering.
     fn build_icon(&self) -> Option<RgbaImage> {
-        // Get theme color for recoloring sprites
-        let theme_color = get_theme_color();
-
-        // Get appropriate cat frame from resources and recolor
-        let cat_raw = if self.is_sleeping {
-            &self.resources.cat_sleep
-        } else {
-            &self.resources.cat_frames
-                [self.current_frame as usize % self.resources.cat_frames.len()]
-        };
-        let cat = recolor_image(cat_raw, theme_color);
+        // Get cached colored cat frame (no recoloring!)
+        let cat = self
+            .resources
+            .get_cat_frame(self.current_frame, self.is_sleeping);
 
         // Only show percentage if user enabled AND panel is medium or larger AND cat is awake
         let should_show_pct =
@@ -307,11 +386,11 @@ impl RunkatTray {
             // For small panels, scale up the cat to use more space (48x48)
             if !self.panel_medium_or_larger {
                 let scaled =
-                    image::imageops::resize(&cat, 48, 48, image::imageops::FilterType::Nearest);
+                    image::imageops::resize(cat, 48, 48, image::imageops::FilterType::Nearest);
                 return Some(scaled);
             }
-            // Just return the cat if no percentage
-            return Some(cat);
+            // Just return the cat if no percentage (clone needed since we return owned)
+            return Some(cat.clone());
         }
 
         // Format CPU percentage (no decimal, max 3 chars)
@@ -336,20 +415,18 @@ impl RunkatTray {
         let text_x = CAT_SIZE + CAT_PCT_SPACING;
         let text_y = (CAT_SIZE - DIGIT_HEIGHT) / 2; // Center vertically
 
-        // Composite each digit (recolored with theme color)
+        // Composite each digit (uses cached colored sprites)
         let mut x = text_x;
         for ch in cpu_str.chars() {
-            if let Some(digit_raw) = self.resources.digits.get(&ch) {
-                let digit_sprite = recolor_image(digit_raw, theme_color);
-                composite_sprite(&mut icon, &digit_sprite, x, text_y);
+            if let Some(digit_sprite) = self.resources.get_digit(ch) {
+                composite_sprite(&mut icon, digit_sprite, x, text_y);
                 x += char_spacing;
             }
         }
 
         // Add % symbol
-        if let Some(pct_raw) = self.resources.digits.get(&'%') {
-            let pct_sprite = recolor_image(pct_raw, theme_color);
-            composite_sprite(&mut icon, &pct_sprite, x, text_y);
+        if let Some(pct_sprite) = self.resources.get_digit('%') {
+            composite_sprite(&mut icon, pct_sprite, x, text_y);
         }
 
         Some(icon)
@@ -554,6 +631,9 @@ fn run_tray_inner() -> Result<TrayExitReason, String> {
     let mut current_cpu: f32 = 0.0;
     let mut last_raw_cpu: f32 = -1.0;
 
+    // Lockfile refresh tracking
+    let mut last_lockfile_refresh = Instant::now();
+
     // CPU smoothing - moving average over last N actual readings (5 seconds at 500ms sample rate)
     let mut cpu_samples: VecDeque<f32> = VecDeque::with_capacity(CPU_SAMPLE_COUNT);
 
@@ -649,6 +729,13 @@ fn run_tray_inner() -> Result<TrayExitReason, String> {
 
         // Update tray if anything changed
         if frame_changed || config_changed || (new_cpu - current_cpu).abs() > 1.0 {
+            // Get current theme color (only when updating)
+            let theme_color = if config_changed {
+                Some(get_theme_color())
+            } else {
+                None
+            };
+
             handle.update(|tray| {
                 tray.current_frame = current_frame;
                 tray.cpu_percent = display_cpu; // Use rounded value for display
@@ -656,6 +743,11 @@ fn run_tray_inner() -> Result<TrayExitReason, String> {
                 if config_changed {
                     tray.panel_medium_or_larger = is_panel_medium_or_larger();
                     tray.show_percentage = config.show_percentage;
+
+                    // Update cached recolored sprites if theme changed
+                    if let Some(color) = theme_color {
+                        tray.resources.update_colors(color);
+                    }
                 }
             });
         } else if last_config_check.elapsed() < Duration::from_millis(20) {
@@ -668,17 +760,10 @@ fn run_tray_inner() -> Result<TrayExitReason, String> {
             });
         }
 
-        // Refresh lockfile timestamp every 30 seconds to indicate we're still running
-        static LOCKFILE_REFRESH: std::sync::atomic::AtomicU64 =
-            std::sync::atomic::AtomicU64::new(0);
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_secs())
-            .unwrap_or(0);
-        let last_refresh = LOCKFILE_REFRESH.load(std::sync::atomic::Ordering::Relaxed);
-        if now - last_refresh >= 30 {
+        // Refresh lockfile timestamp periodically to indicate we're still running
+        if last_lockfile_refresh.elapsed() >= LOCKFILE_REFRESH_INTERVAL {
             crate::create_tray_lockfile();
-            LOCKFILE_REFRESH.store(now, std::sync::atomic::Ordering::Relaxed);
+            last_lockfile_refresh = Instant::now();
         }
 
         // Sleep briefly - 16ms for ~60Hz update check rate
@@ -695,4 +780,140 @@ fn run_tray_inner() -> Result<TrayExitReason, String> {
     crate::remove_tray_lockfile();
 
     Ok(TrayExitReason::Quit)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_recolor_image_preserves_alpha() {
+        let mut img = RgbaImage::new(2, 2);
+        img.put_pixel(0, 0, image::Rgba([100, 100, 100, 255])); // Opaque
+        img.put_pixel(1, 0, image::Rgba([50, 50, 50, 128])); // Semi-transparent
+        img.put_pixel(0, 1, image::Rgba([0, 0, 0, 0])); // Fully transparent
+        img.put_pixel(1, 1, image::Rgba([200, 200, 200, 255])); // Opaque
+
+        let recolored = recolor_image(&img, (255, 0, 0)); // Red
+
+        // Opaque pixels should be red
+        assert_eq!(recolored.get_pixel(0, 0), &image::Rgba([255, 0, 0, 255]));
+        assert_eq!(recolored.get_pixel(1, 1), &image::Rgba([255, 0, 0, 255]));
+
+        // Semi-transparent pixel should be red with preserved alpha
+        assert_eq!(recolored.get_pixel(1, 0), &image::Rgba([255, 0, 0, 128]));
+
+        // Fully transparent should stay transparent (color undefined but alpha=0)
+        assert_eq!(recolored.get_pixel(0, 1)[3], 0);
+    }
+
+    #[test]
+    fn test_composite_sprite_basic() {
+        let mut target = RgbaImage::new(10, 10);
+        let mut sprite = RgbaImage::new(3, 3);
+
+        // Fill sprite with red
+        for pixel in sprite.pixels_mut() {
+            *pixel = image::Rgba([255, 0, 0, 255]);
+        }
+
+        composite_sprite(&mut target, &sprite, 2, 2);
+
+        // Check sprite was composited at correct position
+        assert_eq!(target.get_pixel(2, 2), &image::Rgba([255, 0, 0, 255]));
+        assert_eq!(target.get_pixel(4, 4), &image::Rgba([255, 0, 0, 255]));
+
+        // Check outside sprite area is still black/transparent
+        assert_eq!(target.get_pixel(0, 0)[0], 0);
+        assert_eq!(target.get_pixel(9, 9)[0], 0);
+    }
+
+    #[test]
+    fn test_composite_sprite_skips_transparent() {
+        let mut target = RgbaImage::new(10, 10);
+        // Fill target with white
+        for pixel in target.pixels_mut() {
+            *pixel = image::Rgba([255, 255, 255, 255]);
+        }
+
+        let mut sprite = RgbaImage::new(2, 2);
+        sprite.put_pixel(0, 0, image::Rgba([255, 0, 0, 255])); // Red opaque
+        sprite.put_pixel(1, 0, image::Rgba([0, 255, 0, 0])); // Transparent
+
+        composite_sprite(&mut target, &sprite, 0, 0);
+
+        // Opaque pixel should overwrite
+        assert_eq!(target.get_pixel(0, 0), &image::Rgba([255, 0, 0, 255]));
+
+        // Transparent pixel should be skipped (target stays white)
+        assert_eq!(target.get_pixel(1, 0), &image::Rgba([255, 255, 255, 255]));
+    }
+
+    #[test]
+    fn test_resources_update_colors_caches() {
+        let mut resources = Resources::load().expect("Should load test resources");
+
+        let color1 = (255, 0, 0); // Red
+        let color2 = (0, 0, 255); // Blue
+
+        // First update should recolor
+        resources.update_colors(color1);
+        assert_eq!(resources.last_theme_color, Some(color1));
+
+        // Get first cat frame color
+        let cat_frame = resources.get_cat_frame(0, false);
+        // Find a non-transparent pixel and verify it's red-ish
+        let has_red = cat_frame.pixels().any(|p| p[3] > 0 && p[0] > 200);
+        assert!(has_red, "Should have recolored to red");
+
+        // Second update with same color should be no-op (check by last_theme_color)
+        resources.update_colors(color1);
+        assert_eq!(resources.last_theme_color, Some(color1));
+
+        // Update with different color should recolor
+        resources.update_colors(color2);
+        assert_eq!(resources.last_theme_color, Some(color2));
+
+        let cat_frame = resources.get_cat_frame(0, false);
+        let has_blue = cat_frame.pixels().any(|p| p[3] > 0 && p[2] > 200);
+        assert!(has_blue, "Should have recolored to blue");
+    }
+
+    #[test]
+    fn test_resources_get_cat_frame() {
+        let resources = Resources::load().expect("Should load test resources");
+
+        // Get sleeping frame
+        let sleeping = resources.get_cat_frame(0, true);
+        assert_eq!(sleeping.width(), CAT_SIZE);
+        assert_eq!(sleeping.height(), CAT_SIZE);
+
+        // Get running frame
+        let running = resources.get_cat_frame(5, false);
+        assert_eq!(running.width(), CAT_SIZE);
+        assert_eq!(running.height(), CAT_SIZE);
+
+        // Frame index should wrap
+        let frame_high = resources.get_cat_frame(99, false);
+        assert_eq!(frame_high.width(), CAT_SIZE);
+    }
+
+    #[test]
+    fn test_resources_get_digit() {
+        let resources = Resources::load().expect("Should load test resources");
+
+        // All digits should be available
+        for ch in "0123456789%".chars() {
+            let digit = resources.get_digit(ch);
+            assert!(digit.is_some(), "Digit '{}' should be loaded", ch);
+
+            if let Some(img) = digit {
+                assert_eq!(img.width(), DIGIT_WIDTH);
+                assert_eq!(img.height(), DIGIT_HEIGHT);
+            }
+        }
+
+        // Invalid character should return None
+        assert!(resources.get_digit('X').is_none());
+    }
 }
