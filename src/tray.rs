@@ -69,28 +69,35 @@ fn get_theme_files_mtime() -> Option<std::time::SystemTime> {
 
 /// Parse a color from COSMIC theme RON format
 fn parse_color_from_ron(content: &str, color_name: &str) -> Option<(u8, u8, u8)> {
-    let search_pattern = format!("{}:", color_name);
-    let start_idx = content.find(&search_pattern)?;
-    let block_start = content[start_idx..].find('(')?;
-    let block_end = content[start_idx + block_start..].find(')')?;
-    let block = &content[start_idx + block_start..start_idx + block_start + block_end + 1];
+    // Basic parser for COSMIC theme RON
+    // Looks for `color_name: ( red: X, green: Y, blue: Z ... )`
 
-    let extract_float = |name: &str| -> Option<f32> {
-        let pattern = format!("{}: ", name);
-        let idx = block.find(&pattern)?;
-        let start = idx + pattern.len();
-        let end = block[start..].find(',')?;
-        block[start..start + end].trim().parse().ok()
+    // Find "color_name:"
+    let key = format!("{}:", color_name);
+    let rest = content.split(&key).nth(1)?;
+
+    // Find the content inside the next parenthesis group (...)
+    let start = rest.find('(')?;
+    let end = rest[start..].find(')')?;
+    let block = &rest[start + 1..start + end]; // content inside ( )
+
+    let extract = |name: &str| -> Option<f32> {
+        // Look for "name: value" or "name:value"
+        let name_key = format!("{}:", name);
+        let val_part = block.split(&name_key).nth(1)?;
+        // Take until comma or end
+        let val_str = val_part.split(',').next()?.trim();
+        val_str.parse().ok()
     };
 
-    let red = extract_float("red")?;
-    let green = extract_float("green")?;
-    let blue = extract_float("blue")?;
+    let r = extract("red")?;
+    let g = extract("green")?;
+    let b = extract("blue")?;
 
     Some((
-        (red.clamp(0.0, 1.0) * 255.0) as u8,
-        (green.clamp(0.0, 1.0) * 255.0) as u8,
-        (blue.clamp(0.0, 1.0) * 255.0) as u8,
+        (r.clamp(0.0, 1.0) * 255.0) as u8,
+        (g.clamp(0.0, 1.0) * 255.0) as u8,
+        (b.clamp(0.0, 1.0) * 255.0) as u8,
     ))
 }
 
@@ -182,27 +189,6 @@ fn is_dark_mode() -> bool {
     true
 }
 
-/// Load a digit sprite
-/// Load a digit sprite and recolor with theme color
-fn load_digit(digit: char, color: (u8, u8, u8)) -> Option<RgbaImage> {
-    let data: &[u8] = match digit {
-        '0' => include_bytes!("../resources/digit-0.png"),
-        '1' => include_bytes!("../resources/digit-1.png"),
-        '2' => include_bytes!("../resources/digit-2.png"),
-        '3' => include_bytes!("../resources/digit-3.png"),
-        '4' => include_bytes!("../resources/digit-4.png"),
-        '5' => include_bytes!("../resources/digit-5.png"),
-        '6' => include_bytes!("../resources/digit-6.png"),
-        '7' => include_bytes!("../resources/digit-7.png"),
-        '8' => include_bytes!("../resources/digit-8.png"),
-        '9' => include_bytes!("../resources/digit-9.png"),
-        '%' => include_bytes!("../resources/digit-pct.png"),
-        _ => return None,
-    };
-    let img = image::load_from_memory(data).ok()?.to_rgba8();
-    Some(recolor_image(&img, color))
-}
-
 /// Composite a sprite onto a target image at the given position
 fn composite_sprite(target: &mut RgbaImage, sprite: &RgbaImage, x: u32, y: u32) {
     for (sx, sy, pixel) in sprite.enumerate_pixels() {
@@ -211,6 +197,63 @@ fn composite_sprite(target: &mut RgbaImage, sprite: &RgbaImage, x: u32, y: u32) 
         if tx < target.width() && ty < target.height() && pixel[3] > 0 {
             target.put_pixel(tx, ty, *pixel);
         }
+    }
+}
+
+/// Cache for loaded image resources to avoid repeated decoding
+struct Resources {
+    cat_frames: Vec<RgbaImage>,
+    cat_sleep: RgbaImage,
+    digits: std::collections::HashMap<char, RgbaImage>,
+}
+
+impl std::fmt::Debug for Resources {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Resources")
+            .field("cat_frames", &self.cat_frames.len())
+            .finish()
+    }
+}
+
+impl Resources {
+    fn load() -> Option<Self> {
+        let load_img = |data: &[u8]| -> Option<RgbaImage> {
+            image::load_from_memory(data).ok().map(|i| i.to_rgba8())
+        };
+
+        let cat_sleep = load_img(include_bytes!("../resources/cat-sleep.png"))?;
+
+        let cat_frames = vec![
+            load_img(include_bytes!("../resources/cat-run-0.png"))?,
+            load_img(include_bytes!("../resources/cat-run-1.png"))?,
+            load_img(include_bytes!("../resources/cat-run-2.png"))?,
+            load_img(include_bytes!("../resources/cat-run-3.png"))?,
+            load_img(include_bytes!("../resources/cat-run-4.png"))?,
+            load_img(include_bytes!("../resources/cat-run-5.png"))?,
+            load_img(include_bytes!("../resources/cat-run-6.png"))?,
+            load_img(include_bytes!("../resources/cat-run-7.png"))?,
+            load_img(include_bytes!("../resources/cat-run-8.png"))?,
+            load_img(include_bytes!("../resources/cat-run-9.png"))?,
+        ];
+
+        let mut digits = std::collections::HashMap::new();
+        digits.insert('0', load_img(include_bytes!("../resources/digit-0.png"))?);
+        digits.insert('1', load_img(include_bytes!("../resources/digit-1.png"))?);
+        digits.insert('2', load_img(include_bytes!("../resources/digit-2.png"))?);
+        digits.insert('3', load_img(include_bytes!("../resources/digit-3.png"))?);
+        digits.insert('4', load_img(include_bytes!("../resources/digit-4.png"))?);
+        digits.insert('5', load_img(include_bytes!("../resources/digit-5.png"))?);
+        digits.insert('6', load_img(include_bytes!("../resources/digit-6.png"))?);
+        digits.insert('7', load_img(include_bytes!("../resources/digit-7.png"))?);
+        digits.insert('8', load_img(include_bytes!("../resources/digit-8.png"))?);
+        digits.insert('9', load_img(include_bytes!("../resources/digit-9.png"))?);
+        digits.insert('%', load_img(include_bytes!("../resources/digit-pct.png"))?);
+
+        Some(Self {
+            cat_frames,
+            cat_sleep,
+            digits,
+        })
     }
 }
 
@@ -238,39 +281,21 @@ pub struct RunkatTray {
     show_percentage: bool,
     /// Panel is medium size or larger
     panel_medium_or_larger: bool,
+    /// Cached image resources
+    resources: Resources,
 }
 
 impl RunkatTray {
-    pub fn new(should_quit: Arc<AtomicBool>, show_percentage: bool) -> Self {
-        Self {
+    pub fn new(should_quit: Arc<AtomicBool>, show_percentage: bool) -> Option<Self> {
+        Some(Self {
             should_quit,
             current_frame: 0,
             cpu_percent: 0.0,
             is_sleeping: true,
             show_percentage,
             panel_medium_or_larger: is_panel_medium_or_larger(),
-        }
-    }
-
-    /// Get the cat icon data for the current frame (always dark version, will be recolored)
-    fn get_cat_data(&self) -> &'static [u8] {
-        if self.is_sleeping {
-            include_bytes!("../resources/cat-sleep.png")
-        } else {
-            const CAT_FRAMES: [&[u8]; 10] = [
-                include_bytes!("../resources/cat-run-0.png"),
-                include_bytes!("../resources/cat-run-1.png"),
-                include_bytes!("../resources/cat-run-2.png"),
-                include_bytes!("../resources/cat-run-3.png"),
-                include_bytes!("../resources/cat-run-4.png"),
-                include_bytes!("../resources/cat-run-5.png"),
-                include_bytes!("../resources/cat-run-6.png"),
-                include_bytes!("../resources/cat-run-7.png"),
-                include_bytes!("../resources/cat-run-8.png"),
-                include_bytes!("../resources/cat-run-9.png"),
-            ];
-            CAT_FRAMES[self.current_frame as usize % CAT_FRAMES.len()]
-        }
+            resources: Resources::load()?,
+        })
     }
 
     /// Build the composite icon with cat and optionally CPU percentage beside it
@@ -278,10 +303,14 @@ impl RunkatTray {
         // Get theme color for recoloring sprites
         let theme_color = get_theme_color();
 
-        // Load cat frame and recolor with theme color
-        let cat_data = self.get_cat_data();
-        let cat_raw = image::load_from_memory(cat_data).ok()?.to_rgba8();
-        let cat = recolor_image(&cat_raw, theme_color);
+        // Get appropriate cat frame from resources and recolor
+        let cat_raw = if self.is_sleeping {
+            &self.resources.cat_sleep
+        } else {
+            &self.resources.cat_frames
+                [self.current_frame as usize % self.resources.cat_frames.len()]
+        };
+        let cat = recolor_image(cat_raw, theme_color);
 
         // Only show percentage if user enabled AND panel is medium or larger AND cat is awake
         let should_show_pct =
@@ -323,14 +352,16 @@ impl RunkatTray {
         // Composite each digit (recolored with theme color)
         let mut x = text_x;
         for ch in cpu_str.chars() {
-            if let Some(digit_sprite) = load_digit(ch, theme_color) {
+            if let Some(digit_raw) = self.resources.digits.get(&ch) {
+                let digit_sprite = recolor_image(digit_raw, theme_color);
                 composite_sprite(&mut icon, &digit_sprite, x, text_y);
                 x += char_spacing;
             }
         }
 
         // Add % symbol
-        if let Some(pct_sprite) = load_digit('%', theme_color) {
+        if let Some(pct_raw) = self.resources.digits.get(&'%') {
+            let pct_sprite = recolor_image(pct_raw, theme_color);
             composite_sprite(&mut icon, &pct_sprite, x, text_y);
         }
 
@@ -467,7 +498,8 @@ fn run_tray_inner() -> Result<TrayExitReason, String> {
     // Load config
     let config = Config::load();
 
-    let tray = RunkatTray::new(should_quit.clone(), config.show_percentage);
+    let tray = RunkatTray::new(should_quit.clone(), config.show_percentage)
+        .ok_or_else(|| "Failed to load tray resources".to_string())?;
 
     // Spawn the tray service
     // In Flatpak, disable D-Bus well-known name to avoid PID conflicts

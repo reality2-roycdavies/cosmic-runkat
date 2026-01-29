@@ -70,60 +70,60 @@ fn print_version() {
     println!("cosmic-runkat {}", env!("CARGO_PKG_VERSION"));
 }
 
-/// Check if cosmic-runkat tray is already running using a lockfile
-/// In Flatpak, we can't check /proc/PID due to PID namespace isolation,
-/// so we just check if the lockfile exists (with a timestamp check for stale files)
-fn is_tray_running() -> bool {
-    let lockfile = tray_lockfile_path();
-
-    if let Ok(metadata) = fs::metadata(&lockfile) {
-        // Check if lockfile is recent (less than 1 minute old means tray is likely running)
+/// Check if a lockfile indicates an active process
+///
+/// Checks existence and modification time (to detect stale locks from crashes/restarts)
+fn is_lockfile_active(path: &std::path::Path) -> bool {
+    if let Ok(metadata) = fs::metadata(path) {
         if let Ok(modified) = metadata.modified() {
             if let Ok(elapsed) = modified.elapsed() {
-                // If lockfile was modified less than 60 seconds ago, tray is running
+                // If lockfile was modified less than 60 seconds ago, process is likely running
                 return elapsed.as_secs() < 60;
             }
         }
         // If we can't check time, assume NOT running (conservative approach)
-        // This prevents stale lockfiles from blocking new instances after quit/restart
+        // This prevents stale lockfiles from blocking new instances
         return false;
     }
     false
+}
+
+/// Create a lockfile with the current PID
+fn create_lockfile(path: &std::path::Path) {
+    if let Some(parent) = path.parent() {
+        let _ = fs::create_dir_all(parent);
+    }
+    if let Ok(mut file) = fs::File::create(path) {
+        let _ = write!(file, "{}", std::process::id());
+    }
+}
+
+/// Remove a lockfile
+fn remove_lockfile(path: &std::path::Path) {
+    let _ = fs::remove_file(path);
+}
+
+/// Check if cosmic-runkat tray is already running using a lockfile
+/// In Flatpak, we can't check /proc/PID due to PID namespace isolation,
+/// so we just check if the lockfile exists (with a timestamp check for stale files)
+fn is_tray_running() -> bool {
+    is_lockfile_active(&tray_lockfile_path())
 }
 
 /// Create a lockfile to indicate the tray is running
 /// Called at the start of tray mode
 pub fn create_tray_lockfile() {
-    let lockfile = tray_lockfile_path();
-    // Ensure parent directory exists
-    if let Some(parent) = lockfile.parent() {
-        let _ = fs::create_dir_all(parent);
-    }
-    if let Ok(mut file) = fs::File::create(&lockfile) {
-        let _ = write!(file, "{}", std::process::id());
-    }
+    create_lockfile(&tray_lockfile_path());
 }
 
 /// Remove the lockfile when tray exits
 pub fn remove_tray_lockfile() {
-    let _ = fs::remove_file(tray_lockfile_path());
+    remove_lockfile(&tray_lockfile_path());
 }
 
 /// Check if the GUI/settings app is already running
 fn is_gui_running() -> bool {
-    let lockfile = gui_lockfile_path();
-
-    if let Ok(metadata) = fs::metadata(&lockfile) {
-        if let Ok(modified) = metadata.modified() {
-            if let Ok(elapsed) = modified.elapsed() {
-                return elapsed.as_secs() < 60;
-            }
-        }
-        // If we can't check time, assume NOT running (conservative approach)
-        // This prevents stale lockfiles from blocking new instances after logout/login
-        return false;
-    }
-    false
+    is_lockfile_active(&gui_lockfile_path())
 }
 
 /// Clean up stale lockfiles from previous sessions
@@ -181,18 +181,12 @@ fn cleanup_single_lockfile(lockfile: &std::path::Path, name: &str) {
 
 /// Create a lockfile to indicate the GUI is running
 pub fn create_gui_lockfile() {
-    let lockfile = gui_lockfile_path();
-    if let Some(parent) = lockfile.parent() {
-        let _ = fs::create_dir_all(parent);
-    }
-    if let Ok(mut file) = fs::File::create(&lockfile) {
-        let _ = write!(file, "{}", std::process::id());
-    }
+    create_lockfile(&gui_lockfile_path());
 }
 
 /// Remove the GUI lockfile when app exits
 pub fn remove_gui_lockfile() {
-    let _ = fs::remove_file(gui_lockfile_path());
+    remove_lockfile(&gui_lockfile_path());
 }
 
 /// Ensure autostart entry exists for the tray
@@ -299,9 +293,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         if !is_tray_running() {
             println!("Starting cosmic-runkat tray in background...");
             // Start tray in background
-            if let Err(e) = Command::new(env::current_exe().unwrap_or_else(|_| "cosmic-runkat".into()))
-                .arg("--tray")
-                .spawn()
+            if let Err(e) =
+                Command::new(env::current_exe().unwrap_or_else(|_| "cosmic-runkat".into()))
+                    .arg("--tray")
+                    .spawn()
             {
                 eprintln!("Warning: Failed to start tray: {}", e);
             }
