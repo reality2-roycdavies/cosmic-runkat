@@ -533,37 +533,7 @@ impl Tray for RunkatTray {
     fn menu(&self) -> Vec<ksni::MenuItem<Self>> {
         use ksni::menu::*;
 
-        let config = Config::load();
-
-        // Build stats header based on animation source (read fresh)
-        let stats_label = match config.animation_source {
-            crate::config::AnimationSource::CpuUsage => {
-                format!("CPU: {:.0}%", self.cpu_percent)
-            }
-            crate::config::AnimationSource::Frequency => {
-                let freq = crate::sysinfo::CpuFrequency::read();
-                let avg_mhz: u32 = if freq.per_core.is_empty() {
-                    0
-                } else {
-                    freq.per_core.iter().sum::<u32>() / freq.per_core.len() as u32
-                };
-                format!("Freq: {} MHz ({:.0}%)", avg_mhz, freq.average_percentage())
-            }
-            crate::config::AnimationSource::Temperature => {
-                let temp = crate::sysinfo::CpuTemperature::read();
-                format!("Temp: {:.0}°C", temp.max_temp())
-            }
-        };
-
         vec![
-            // Stats header (disabled, just for display)
-            StandardItem {
-                label: stats_label,
-                enabled: false,
-                ..Default::default()
-            }
-            .into(),
-            MenuItem::Separator,
             StandardItem {
                 label: "View Details...".to_string(),
                 activate: Box::new(|_| {
