@@ -4,9 +4,10 @@
 //! The animation speed varies based on CPU usage.
 //! CPU percentage is dynamically composited onto the icon.
 
-use crate::config::Config;
+use crate::config::{AnimationSource, Config};
 use crate::constants::*;
 use crate::cpu::CpuMonitor;
+use crate::sysinfo::{CpuFrequency, CpuTemperature};
 use crate::theme;
 use image::RgbaImage;
 use ksni::Tray;
@@ -350,6 +351,8 @@ pub struct RunkatTray {
     cpu_percent: f32,
     /// Per-core CPU percentages
     per_core_cpu: Vec<f32>,
+    /// Current animation metric (0-100, based on animation_source)
+    animation_metric: f32,
     /// Is the cat sleeping?
     is_sleeping: bool,
     /// Show percentage on icon (user preference)
@@ -374,6 +377,7 @@ impl RunkatTray {
             current_frame: 0,
             cpu_percent: 0.0,
             per_core_cpu: Vec::new(),
+            animation_metric: 0.0,
             is_sleeping: true,
             show_percentage,
             panel_medium_or_larger: is_panel_medium_or_larger(),
@@ -456,22 +460,9 @@ impl Tray for RunkatTray {
         // Left-click: Open popup window with CPU details
         // Note: x,y are always 0,0 on Wayland (no global coordinates available)
 
-        // Check if popup is already open (via lockfile)
-        let popup_lock = crate::paths::app_config_dir().join("popup.lock");
-        if popup_lock.exists() {
-            // Check if lockfile is fresh (less than 30 seconds old)
-            if let Ok(metadata) = fs::metadata(&popup_lock) {
-                if let Ok(modified) = metadata.modified() {
-                    if let Ok(elapsed) = modified.elapsed() {
-                        if elapsed.as_secs() < 30 {
-                            // Popup is already open, don't spawn another
-                            return;
-                        }
-                    }
-                }
-            }
-            // Stale lockfile, remove it
-            let _ = fs::remove_file(&popup_lock);
+        // Check if popup is already running by checking processes
+        if crate::popup::is_popup_running() {
+            return;
         }
 
         // Spawn popup
@@ -542,7 +533,48 @@ impl Tray for RunkatTray {
     fn menu(&self) -> Vec<ksni::MenuItem<Self>> {
         use ksni::menu::*;
 
+        let config = Config::load();
+
+        // Build stats header based on animation source (read fresh)
+        let stats_label = match config.animation_source {
+            crate::config::AnimationSource::CpuUsage => {
+                format!("CPU: {:.0}%", self.cpu_percent)
+            }
+            crate::config::AnimationSource::Frequency => {
+                let freq = crate::sysinfo::CpuFrequency::read();
+                let avg_mhz: u32 = if freq.per_core.is_empty() {
+                    0
+                } else {
+                    freq.per_core.iter().sum::<u32>() / freq.per_core.len() as u32
+                };
+                format!("Freq: {} MHz ({:.0}%)", avg_mhz, freq.average_percentage())
+            }
+            crate::config::AnimationSource::Temperature => {
+                let temp = crate::sysinfo::CpuTemperature::read();
+                format!("Temp: {:.0}°C", temp.max_temp())
+            }
+        };
+
         vec![
+            // Stats header (disabled, just for display)
+            StandardItem {
+                label: stats_label,
+                enabled: false,
+                ..Default::default()
+            }
+            .into(),
+            MenuItem::Separator,
+            StandardItem {
+                label: "View Details...".to_string(),
+                activate: Box::new(|_| {
+                    std::thread::spawn(|| {
+                        let exe = std::env::current_exe().unwrap_or_default();
+                        let _ = Command::new(exe).arg("--popup").spawn();
+                    });
+                }),
+                ..Default::default()
+            }
+            .into(),
             StandardItem {
                 label: "Settings...".to_string(),
                 icon_name: "preferences-system-symbolic".to_string(),
@@ -682,13 +714,12 @@ async fn run_tray_inner() -> Result<TrayExitReason, String> {
                     if (smoothed_cpu - current_cpu).abs() > CPU_DISPLAY_THRESHOLD {
                         current_cpu = smoothed_cpu;
                         let display_cpu = current_cpu.round();
-                        let is_sleeping = display_cpu < config.sleep_threshold;
 
-                        tracing::debug!("CPU: {:.1}%, sleeping: {}", display_cpu, is_sleeping);
+                        tracing::debug!("CPU: {:.1}%", display_cpu);
 
+                        // Only update cpu_percent for display, is_sleeping is set in animation tick
                         handle.update(|tray| {
                             tray.cpu_percent = display_cpu;
-                            tray.is_sleeping = is_sleeping;
                         }).await;
                     }
                 }
@@ -722,12 +753,37 @@ async fn run_tray_inner() -> Result<TrayExitReason, String> {
                     break;
                 }
 
-                // Update animation frame if running
-                let display_cpu = current_cpu.round();
-                let is_sleeping = display_cpu < config.sleep_threshold;
+                // Get animation metric and determine sleep state based on configured source
+                let (animation_metric, is_sleeping) = match config.animation_source {
+                    AnimationSource::CpuUsage => {
+                        let metric = current_cpu;
+                        (metric, metric < config.sleep_threshold_cpu)
+                    }
+                    AnimationSource::Frequency => {
+                        let freq = CpuFrequency::read();
+                        // For animation speed, use percentage (0-100)
+                        let metric = freq.average_percentage();
+                        // For sleep, compare average MHz against threshold in MHz
+                        let avg_mhz = if freq.per_core.is_empty() {
+                            0.0
+                        } else {
+                            freq.per_core.iter().sum::<u32>() as f32 / freq.per_core.len() as f32
+                        };
+                        (metric, avg_mhz < config.sleep_threshold_freq)
+                    }
+                    AnimationSource::Temperature => {
+                        let temp = CpuTemperature::read();
+                        let actual_temp = temp.max_temp();
+                        // For animation speed, use percentage (0-100)
+                        let metric = temp.percentage();
+                        // For sleep, compare actual temp in °C against threshold
+                        (metric, actual_temp < config.sleep_threshold_temp)
+                    }
+                };
 
+                // Update animation frame if running
                 if !is_sleeping {
-                    let fps = config.calculate_fps(current_cpu);
+                    let fps = config.calculate_fps(animation_metric);
                     if fps > 0.0 {
                         let frame_duration = Duration::from_secs_f32(1.0 / fps);
                         if last_frame_time.elapsed() >= frame_duration {
@@ -736,9 +792,17 @@ async fn run_tray_inner() -> Result<TrayExitReason, String> {
 
                             handle.update(|tray| {
                                 tray.current_frame = current_frame;
+                                tray.animation_metric = animation_metric;
+                                tray.is_sleeping = is_sleeping;
                             }).await;
                         }
                     }
+                } else {
+                    // Update sleeping state even when not animating
+                    handle.update(|tray| {
+                        tray.animation_metric = animation_metric;
+                        tray.is_sleeping = is_sleeping;
+                    }).await;
                 }
             }
 
@@ -746,7 +810,10 @@ async fn run_tray_inner() -> Result<TrayExitReason, String> {
             _ = config_check.tick() => {
                 let new_config = Config::load();
                 let config_changed = new_config.show_percentage != config.show_percentage
-                    || (new_config.sleep_threshold - config.sleep_threshold).abs() > 0.1;
+                    || new_config.animation_source != config.animation_source
+                    || (new_config.sleep_threshold_cpu - config.sleep_threshold_cpu).abs() > 0.1
+                    || (new_config.sleep_threshold_freq - config.sleep_threshold_freq).abs() > 0.1
+                    || (new_config.sleep_threshold_temp - config.sleep_threshold_temp).abs() > 0.1;
 
                 // Check for theme file changes
                 let new_mtime = get_theme_files_mtime();

@@ -1,10 +1,11 @@
-//! Popup window module for displaying per-core CPU statistics
+//! Popup window module for displaying CPU statistics
 //!
 //! Uses Wayland layer-shell protocol via iced's SCTK integration
 //! to create a proper dropdown-like popup that appears near the tray icon.
 
-use crate::config::{Config, PopupPosition};
+use crate::config::{AnimationSource, Config, PopupPosition};
 use crate::cpu::{CpuMonitor, CpuUsage};
+use crate::sysinfo::{CpuFrequency, CpuTemperature};
 use crate::theme;
 
 use cosmic::iced;
@@ -15,12 +16,10 @@ use cosmic::iced::platform_specific::shell::commands::layer_surface::{
 
 use cosmic::iced_core::layout::Limits;
 use cosmic::iced::event::{self, Event};
-use cosmic::iced::widget::{button, column, container, horizontal_space, row, text, Space};
+use cosmic::iced::widget::{button, column, container, horizontal_space, row, scrollable, text, Space};
 use cosmic::iced::window::{self, Id};
 use cosmic::iced::{Alignment, Color, Element, Length, Subscription, Task, Theme};
 
-use std::fs;
-use std::io::Write;
 use std::process::Command;
 use std::time::Duration;
 
@@ -47,6 +46,10 @@ struct PopupApp {
     cpu_monitor: CpuMonitor,
     /// Current CPU usage data
     cpu_usage: CpuUsage,
+    /// Current CPU frequency data
+    cpu_frequency: CpuFrequency,
+    /// Current CPU temperature data
+    cpu_temperature: CpuTemperature,
     /// Theme accent color
     accent_color: (u8, u8, u8),
     /// Whether we should exit
@@ -64,6 +67,8 @@ impl Default for PopupApp {
             surface_id: None,
             cpu_monitor,
             cpu_usage: CpuUsage::default(),
+            cpu_frequency: CpuFrequency::read(),
+            cpu_temperature: CpuTemperature::read(),
             accent_color: theme_colors.foreground,
             should_exit: false,
         }
@@ -77,9 +82,9 @@ impl PopupApp {
         // Calculate size based on CPU count
         let cpu_count = num_cpus::get();
         let base_height = 180u32;
-        let per_core_height = 20u32;
-        let height = (base_height + (cpu_count as u32 * per_core_height)).min(600);
-        let width = 320u32;
+        let per_core_height = 22u32;
+        let height = (base_height + (cpu_count as u32 * per_core_height)).min(700);
+        let width = 380u32;
 
         // Margin from edge (near the tray area)
         let edge_margin = 8;
@@ -98,8 +103,6 @@ impl PopupApp {
             .max_height(height as f32);
 
         // Set anchor and margins based on configured popup position
-        // Note: ksni on Wayland provides x=0, y=0 (no global coordinates available)
-        // so we use a configurable position instead
         let (anchor, margin) = match config.popup_position {
             PopupPosition::TopLeft => (
                 Anchor::TOP | Anchor::LEFT,
@@ -175,6 +178,8 @@ impl PopupApp {
             }
             Message::Tick => {
                 self.cpu_usage = self.cpu_monitor.current_full();
+                self.cpu_frequency = CpuFrequency::read();
+                self.cpu_temperature = CpuTemperature::read();
                 let theme_colors = theme::get_cosmic_theme_colors();
                 self.accent_color = theme_colors.foreground;
             }
@@ -202,8 +207,6 @@ impl PopupApp {
         }
 
         if self.should_exit && self.surface_id.is_none() {
-            // Clean up lockfile before exiting
-            remove_popup_lockfile();
             std::process::exit(0);
         }
 
@@ -213,9 +216,16 @@ impl PopupApp {
     fn view(&self, _id: Id) -> Element<'_, Message> {
         let config = Config::load();
 
+        // Title based on animation source
+        let title_text = match config.animation_source {
+            AnimationSource::CpuUsage => "CPU Usage",
+            AnimationSource::Frequency => "CPU Frequency",
+            AnimationSource::Temperature => "CPU Temperature",
+        };
+
         // Title row with close button
         let title_row = row![
-            text("RunKat CPU Monitor").size(16),
+            text(title_text).size(16),
             horizontal_space(),
             button(text("×").size(18))
                 .on_press(Message::Close)
@@ -225,45 +235,163 @@ impl PopupApp {
         .spacing(8)
         .align_y(Alignment::Center);
 
-        // Overall CPU bar
-        let overall_pct = self.cpu_usage.aggregate;
-        let overall_row = row![
-            text("Total:").size(14).width(Length::Fixed(55.0)),
-            self.cpu_bar(overall_pct, true),
-            text(format!("{:5.1}%", overall_pct))
-                .size(14)
-                .width(Length::Fixed(55.0)),
-        ]
-        .spacing(8)
-        .align_y(Alignment::Center);
+        // Build content based on animation source
+        let stats_content: Element<'_, Message> = match config.animation_source {
+            AnimationSource::CpuUsage => {
+                // Overall CPU bar
+                let overall_pct = self.cpu_usage.aggregate;
+                let overall_row = row![
+                    text("Total:").size(14).width(Length::Fixed(80.0)),
+                    self.progress_bar(overall_pct, 100.0, false),
+                    text(format!("{:5.1}%", overall_pct))
+                        .size(14)
+                        .width(Length::Fixed(55.0)),
+                ]
+                .spacing(8)
+                .align_y(Alignment::Center);
 
-        // Per-core CPU bars
-        let mut core_column = column![].spacing(2);
-        for (i, &pct) in self.cpu_usage.per_core.iter().enumerate() {
-            let label = if self.cpu_usage.per_core.len() > 8 {
-                format!("{:2}", i)
-            } else {
-                format!("CPU{}", i)
-            };
+                // Per-core CPU bars
+                let mut core_column = column![].spacing(2);
+                for (i, &pct) in self.cpu_usage.per_core.iter().enumerate() {
+                    let label = format!("CPU{}:", i);
+                    let core_row = row![
+                        text(label).size(11).width(Length::Fixed(80.0)),
+                        self.progress_bar(pct, 100.0, false),
+                        text(format!("{:5.1}%", pct))
+                            .size(11)
+                            .width(Length::Fixed(55.0)),
+                    ]
+                    .spacing(8)
+                    .align_y(Alignment::Center);
+                    core_column = core_column.push(core_row);
+                }
 
-            let core_row = row![
-                text(label).size(11).width(Length::Fixed(55.0)),
-                self.cpu_bar(pct, false),
-                text(format!("{:5.1}%", pct))
-                    .size(11)
-                    .width(Length::Fixed(55.0)),
-            ]
-            .spacing(8)
-            .align_y(Alignment::Center);
+                column![overall_row, core_column].spacing(4).into()
+            }
 
-            core_column = core_column.push(core_row);
-        }
+            AnimationSource::Frequency => {
+                // Average frequency
+                let avg_mhz: u32 = if self.cpu_frequency.per_core.is_empty() {
+                    0
+                } else {
+                    self.cpu_frequency.per_core.iter().sum::<u32>()
+                        / self.cpu_frequency.per_core.len() as u32
+                };
+                let max_mhz = self.cpu_frequency.max_per_core.first().copied().unwrap_or(1);
 
-        // Status text
-        let status_text = if overall_pct < config.sleep_threshold {
-            "Cat is sleeping..."
-        } else {
-            "Cat is running!"
+                let avg_row = row![
+                    text("Avg:").size(14).width(Length::Fixed(80.0)),
+                    self.progress_bar(avg_mhz as f32, max_mhz as f32, true),
+                    text(format!("{} MHz", avg_mhz))
+                        .size(14)
+                        .width(Length::Fixed(80.0)),
+                ]
+                .spacing(8)
+                .align_y(Alignment::Center);
+
+                // Per-core frequencies
+                let mut core_column = column![].spacing(2);
+                for (i, &mhz) in self.cpu_frequency.per_core.iter().enumerate() {
+                    let max = self.cpu_frequency.max_per_core.get(i).copied().unwrap_or(1);
+                    let label = format!("CPU{}:", i);
+                    let core_row = row![
+                        text(label).size(11).width(Length::Fixed(80.0)),
+                        self.progress_bar(mhz as f32, max as f32, true),
+                        text(format!("{} MHz", mhz))
+                            .size(11)
+                            .width(Length::Fixed(80.0)),
+                    ]
+                    .spacing(8)
+                    .align_y(Alignment::Center);
+                    core_column = core_column.push(core_row);
+                }
+
+                column![avg_row, core_column].spacing(4).into()
+            }
+
+            AnimationSource::Temperature => {
+                let max_temp = self.cpu_temperature.max_temp();
+                let critical = self.cpu_temperature.critical.unwrap_or(100.0);
+
+                // Max temperature
+                let max_row = row![
+                    text("Max:").size(14).width(Length::Fixed(80.0)),
+                    self.progress_bar(max_temp, critical, false),
+                    text(format!("{:.1}°C", max_temp))
+                        .size(14)
+                        .width(Length::Fixed(55.0)),
+                ]
+                .spacing(8)
+                .align_y(Alignment::Center);
+
+                let mut temp_column = column![max_row].spacing(2);
+
+                // Package temperature
+                if let Some(pkg_temp) = self.cpu_temperature.package {
+                    let pkg_row = row![
+                        text("Package:").size(11).width(Length::Fixed(80.0)),
+                        self.progress_bar(pkg_temp, critical, false),
+                        text(format!("{:.1}°C", pkg_temp))
+                            .size(11)
+                            .width(Length::Fixed(55.0)),
+                    ]
+                    .spacing(8)
+                    .align_y(Alignment::Center);
+                    temp_column = temp_column.push(pkg_row);
+                }
+
+                // Per-core temps
+                for (i, &temp) in self.cpu_temperature.per_core.iter().enumerate() {
+                    let label = format!("Core {}:", i);
+                    let core_row = row![
+                        text(label).size(11).width(Length::Fixed(80.0)),
+                        self.progress_bar(temp, critical, false),
+                        text(format!("{:.1}°C", temp))
+                            .size(11)
+                            .width(Length::Fixed(55.0)),
+                    ]
+                    .spacing(8)
+                    .align_y(Alignment::Center);
+                    temp_column = temp_column.push(core_row);
+                }
+
+                temp_column.into()
+            }
+        };
+
+        // Status text (using per-source thresholds)
+        let status_text = match config.animation_source {
+            AnimationSource::CpuUsage => {
+                if self.cpu_usage.aggregate < config.sleep_threshold_cpu {
+                    "Cat is sleeping..."
+                } else {
+                    "Cat is running!"
+                }
+            }
+            AnimationSource::Frequency => {
+                // Compare average MHz against threshold in MHz
+                let avg_mhz = if self.cpu_frequency.per_core.is_empty() {
+                    0.0
+                } else {
+                    self.cpu_frequency.per_core.iter().sum::<u32>() as f32
+                        / self.cpu_frequency.per_core.len() as f32
+                };
+                if avg_mhz < config.sleep_threshold_freq {
+                    "Cat is idle..."
+                } else {
+                    "Cat is boosting!"
+                }
+            }
+            AnimationSource::Temperature => {
+                let max_temp = self.cpu_temperature.max_temp();
+                if max_temp < config.sleep_threshold_temp {
+                    "Cat is cool..."
+                } else if max_temp > 80.0 {
+                    "Cat is HOT!"
+                } else {
+                    "Cat is warm..."
+                }
+            }
         };
 
         // Bottom row with status and settings button
@@ -287,13 +415,15 @@ impl PopupApp {
                 })
         };
 
+        // Scrollable stats area
+        let scrollable_stats = scrollable(stats_content)
+            .height(Length::Fill);
+
         // Main content
         let content = column![
             title_row,
             divider(),
-            overall_row,
-            divider(),
-            core_column,
+            scrollable_stats,
             divider(),
             bottom_row,
         ]
@@ -336,19 +466,28 @@ impl PopupApp {
         ])
     }
 
-    /// Create a CPU usage bar
-    fn cpu_bar(&self, percent: f32, is_total: bool) -> Element<'_, Message> {
+    /// Create a progress bar
+    fn progress_bar(&self, value: f32, max: f32, is_freq: bool) -> Element<'_, Message> {
         let bar_width = 140.0f32;
-        let bar_height = if is_total { 14.0f32 } else { 10.0f32 };
-        let filled_width = (percent / 100.0 * bar_width).max(0.0).min(bar_width);
+        let bar_height = 12.0f32;
+        let pct = if max > 0.0 { value / max } else { 0.0 };
+        let pct = pct.clamp(0.0, 1.0);
+        let filled_width = (pct * bar_width).max(0.0).min(bar_width);
 
-        // Color based on usage
-        let bar_color = if percent > 90.0 {
-            Color::from_rgb8(220, 50, 50)
-        } else if percent > 70.0 {
-            Color::from_rgb8(220, 150, 50)
-        } else if percent > 50.0 {
-            Color::from_rgb8(200, 200, 50)
+        // Color based on value
+        let bar_color = if is_freq {
+            // Blue for frequency
+            Color::from_rgb8(
+                (50.0 + pct * 150.0) as u8,
+                (100.0 + pct * 100.0) as u8,
+                220,
+            )
+        } else if pct > 0.9 {
+            Color::from_rgb8(220, 50, 50) // Red
+        } else if pct > 0.7 {
+            Color::from_rgb8(220, 150, 50) // Orange
+        } else if pct > 0.5 {
+            Color::from_rgb8(200, 200, 50) // Yellow
         } else {
             let (r, g, b) = self.accent_color;
             Color::from_rgb8(r, g, b)
@@ -381,37 +520,39 @@ impl PopupApp {
     }
 }
 
-/// Get popup lockfile path
-fn popup_lockfile() -> std::path::PathBuf {
-    crate::paths::app_config_dir().join("popup.lock")
-}
-
-/// Create popup lockfile
-fn create_popup_lockfile() {
-    let path = popup_lockfile();
-    if let Some(parent) = path.parent() {
-        let _ = fs::create_dir_all(parent);
+/// Check if popup is already running by looking for the process
+pub fn is_popup_running() -> bool {
+    // Check /proc for processes with --popup argument
+    if let Ok(entries) = std::fs::read_dir("/proc") {
+        let current_pid = std::process::id();
+        for entry in entries.flatten() {
+            if let Ok(pid) = entry.file_name().to_string_lossy().parse::<u32>() {
+                // Skip our own process
+                if pid == current_pid {
+                    continue;
+                }
+                // Check cmdline for --popup
+                let cmdline_path = format!("/proc/{}/cmdline", pid);
+                if let Ok(cmdline) = std::fs::read_to_string(&cmdline_path) {
+                    if cmdline.contains("cosmic-runkat") && cmdline.contains("--popup") {
+                        return true;
+                    }
+                }
+            }
+        }
     }
-    if let Ok(mut file) = fs::File::create(&path) {
-        let _ = write!(file, "{}", std::process::id());
-    }
-}
-
-/// Remove popup lockfile
-fn remove_popup_lockfile() {
-    let _ = fs::remove_file(popup_lockfile());
+    false
 }
 
 /// Run the popup using layer-shell
 pub fn run_popup() -> iced::Result {
-    // Create lockfile to prevent multiple instances
-    create_popup_lockfile();
+    // Check if popup is already running
+    if is_popup_running() {
+        eprintln!("Popup is already running");
+        return Ok(());
+    }
 
-    let result = iced::daemon(PopupApp::title, PopupApp::update, PopupApp::view)
+    iced::daemon(PopupApp::title, PopupApp::update, PopupApp::view)
         .subscription(PopupApp::subscription)
-        .run_with(PopupApp::new);
-
-    // Clean up lockfile on exit
-    remove_popup_lockfile();
-    result
+        .run_with(PopupApp::new)
 }

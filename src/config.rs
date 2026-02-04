@@ -41,14 +41,56 @@ impl PopupPosition {
         "Bottom Left",
         "Bottom Right",
     ];
+}
 
+/// What drives the cat animation speed
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "kebab-case")]
+pub enum AnimationSource {
+    /// Animation speed based on CPU usage (default)
+    #[default]
+    CpuUsage,
+    /// Animation speed based on CPU frequency
+    Frequency,
+    /// Animation speed based on CPU temperature
+    Temperature,
+}
+
+impl AnimationSource {
+    /// All available sources
+    pub const ALL: &'static [AnimationSource] = &[
+        AnimationSource::CpuUsage,
+        AnimationSource::Frequency,
+        AnimationSource::Temperature,
+    ];
+
+    /// Display names matching ALL order
+    pub const NAMES: &'static [&'static str] = &[
+        "CPU Usage",
+        "CPU Frequency",
+        "CPU Temperature",
+    ];
 }
 
 /// Application configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
-    /// Minimum CPU percentage below which the cat sleeps (default: 5%)
+    /// Legacy sleep threshold (kept for backwards compatibility)
+    /// Use the per-source thresholds instead
+    #[serde(default = "default_sleep_threshold")]
     pub sleep_threshold: f32,
+
+    /// Sleep threshold for CPU usage mode (percentage, 0-30)
+    #[serde(default = "default_cpu_threshold")]
+    pub sleep_threshold_cpu: f32,
+
+    /// Sleep threshold for frequency mode (MHz)
+    #[serde(default = "default_freq_threshold")]
+    pub sleep_threshold_freq: f32,
+
+    /// Sleep threshold for temperature mode (degrees C, 20-100)
+    #[serde(default = "default_temp_threshold")]
+    pub sleep_threshold_temp: f32,
 
     /// Maximum animation speed in frames per second (default: 15)
     pub max_fps: f32,
@@ -62,17 +104,52 @@ pub struct Config {
     /// Where the popup appears when clicking the tray icon (default: top-right)
     #[serde(default)]
     pub popup_position: PopupPosition,
+
+    /// What drives the cat animation speed and popup display (default: CPU usage)
+    #[serde(default)]
+    pub animation_source: AnimationSource,
 }
+
+fn default_sleep_threshold() -> f32 { 5.0 }
+fn default_cpu_threshold() -> f32 { 5.0 }
+fn default_freq_threshold() -> f32 { 1000.0 }  // 1 GHz
+fn default_temp_threshold() -> f32 { 40.0 }
 
 impl Default for Config {
     fn default() -> Self {
         Self {
             sleep_threshold: 5.0,
-            max_fps: 15.0, // Faster max animation
-            min_fps: 2.0,  // Faster min animation
+            sleep_threshold_cpu: 5.0,
+            sleep_threshold_freq: 1000.0,  // 1 GHz
+            sleep_threshold_temp: 40.0,
+            max_fps: 15.0,
+            min_fps: 2.0,
             show_percentage: true,
             popup_position: PopupPosition::default(),
+            animation_source: AnimationSource::default(),
         }
+    }
+}
+
+impl Config {
+    /// Get the current sleep threshold based on animation source
+    pub fn current_threshold(&self) -> f32 {
+        match self.animation_source {
+            AnimationSource::CpuUsage => self.sleep_threshold_cpu,
+            AnimationSource::Frequency => self.sleep_threshold_freq,
+            AnimationSource::Temperature => self.sleep_threshold_temp,
+        }
+    }
+
+    /// Set the current sleep threshold based on animation source
+    pub fn set_current_threshold(&mut self, value: f32) {
+        match self.animation_source {
+            AnimationSource::CpuUsage => self.sleep_threshold_cpu = value,
+            AnimationSource::Frequency => self.sleep_threshold_freq = value,
+            AnimationSource::Temperature => self.sleep_threshold_temp = value,
+        }
+        // Also update legacy field for compatibility
+        self.sleep_threshold = value;
     }
 }
 
@@ -188,10 +265,27 @@ impl Config {
     ///
     /// Returns an error if any values are outside acceptable ranges.
     pub fn validate(&self) -> Result<(), String> {
-        if !(MIN_SLEEP_THRESHOLD..=MAX_SLEEP_THRESHOLD).contains(&self.sleep_threshold) {
+        // Validate per-source thresholds
+        if !(0.0..=100.0).contains(&self.sleep_threshold_cpu) {
             return Err(format!(
-                "sleep_threshold must be between {} and {}, got {}",
-                MIN_SLEEP_THRESHOLD, MAX_SLEEP_THRESHOLD, self.sleep_threshold
+                "sleep_threshold_cpu must be between 0 and 100, got {}",
+                self.sleep_threshold_cpu
+            ));
+        }
+
+        // Frequency threshold can be 0 to 10000 MHz (reasonable max)
+        if !(0.0..=10000.0).contains(&self.sleep_threshold_freq) {
+            return Err(format!(
+                "sleep_threshold_freq must be between 0 and 10000 MHz, got {}",
+                self.sleep_threshold_freq
+            ));
+        }
+
+        // Temperature threshold 0 to 150°C
+        if !(0.0..=150.0).contains(&self.sleep_threshold_temp) {
+            return Err(format!(
+                "sleep_threshold_temp must be between 0 and 150°C, got {}",
+                self.sleep_threshold_temp
             ));
         }
 

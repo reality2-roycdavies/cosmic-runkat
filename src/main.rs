@@ -16,6 +16,7 @@ mod error;
 mod paths;
 mod popup;
 mod settings;
+mod sysinfo;
 mod theme;
 mod tray;
 
