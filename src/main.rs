@@ -14,6 +14,7 @@ mod constants;
 mod cpu;
 mod error;
 mod paths;
+mod popup;
 mod settings;
 mod theme;
 mod tray;
@@ -67,6 +68,7 @@ Usage: cosmic-runkat [OPTIONS]
 Options:
     -t, --tray       Run the system tray icon (for autostart)
     -s, --settings   Open the settings window
+    -p, --popup      Open the CPU monitor popup window
     -h, --help       Show this help message
     -v, --version    Show version information
 
@@ -337,6 +339,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let result = settings::run_settings().map_err(|e| e.into());
                 remove_gui_lockfile();
                 result
+            }
+            "-p" | "--popup" => {
+                // Open the CPU monitor popup window
+                tracing::info!("Opening CPU monitor popup");
+                popup::run_popup().map_err(|e| e.into())
             }
             arg => {
                 eprintln!("Unknown argument: {}", arg);

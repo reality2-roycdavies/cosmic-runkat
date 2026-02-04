@@ -7,7 +7,7 @@ use cosmic::iced::Length;
 use cosmic::widget::{self, settings, text, toggler};
 use cosmic::{Action, Application, Element, Task};
 
-use crate::config::Config;
+use crate::config::{Config, PopupPosition};
 
 /// Application ID
 pub const APP_ID: &str = "io.github.reality2_roycdavies.cosmic-runkat";
@@ -19,6 +19,8 @@ pub enum Message {
     SleepThresholdChanged(f32),
     /// Show percentage toggled
     ShowPercentageToggled(bool),
+    /// Popup position changed
+    PopupPositionChanged(PopupPosition),
     /// Periodic tick for lockfile refresh
     Tick,
 }
@@ -79,6 +81,10 @@ impl Application for SettingsApp {
                 // Save immediately so tray updates
                 let _ = self.config.save();
             }
+            Message::PopupPositionChanged(position) => {
+                self.config.popup_position = position;
+                let _ = self.config.save();
+            }
             Message::Tick => {
                 // Refresh the GUI lockfile to indicate we're still running
                 crate::create_gui_lockfile();
@@ -95,6 +101,17 @@ impl Application for SettingsApp {
     fn view(&self) -> Element<'_, Self::Message> {
         // Page title (large, like COSMIC Settings)
         let page_title = text::title1("RunKat Settings");
+
+        // Build popup position dropdown
+        let selected_index = PopupPosition::ALL
+            .iter()
+            .position(|&p| p == self.config.popup_position);
+        let position_dropdown = widget::dropdown(
+            PopupPosition::NAMES,
+            selected_index,
+            |idx| Message::PopupPositionChanged(PopupPosition::ALL[idx]),
+        )
+        .width(Length::Fixed(150.0));
 
         // Build sections using COSMIC settings widgets
         let behavior_section = settings::section()
@@ -118,12 +135,16 @@ impl Application for SettingsApp {
                         .step(1.0)
                         .width(Length::Fill),
                     ),
+            ))
+            .add(settings::item(
+                "Popup Position",
+                position_dropdown,
             ));
 
         // Use settings::view_column for proper COSMIC styling
         let content = settings::view_column(vec![
             page_title.into(),
-            text::caption("Display percentage next to the cat on medium+ panels. Cat sleeps when CPU is below the threshold.").into(),
+            text::caption("Display percentage next to the cat on medium+ panels. Cat sleeps when CPU is below the threshold. Click the tray icon to show per-core CPU usage.").into(),
             behavior_section.into(),
         ]);
 
@@ -138,7 +159,7 @@ impl Application for SettingsApp {
 
 /// Run the settings application
 pub fn run_settings() -> cosmic::iced::Result {
-    let settings = cosmic::app::Settings::default().size(cosmic::iced::Size::new(850.0, 400.0));
+    let settings = cosmic::app::Settings::default().size(cosmic::iced::Size::new(850.0, 450.0));
 
     cosmic::app::run::<SettingsApp>(settings, ())
 }

@@ -10,6 +10,40 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
 
+/// Popup position relative to screen edges
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "kebab-case")]
+pub enum PopupPosition {
+    /// Top-left corner (near left panel tray)
+    TopLeft,
+    /// Top-right corner (near right panel tray)
+    #[default]
+    TopRight,
+    /// Bottom-left corner
+    BottomLeft,
+    /// Bottom-right corner
+    BottomRight,
+}
+
+impl PopupPosition {
+    /// All available positions
+    pub const ALL: &'static [PopupPosition] = &[
+        PopupPosition::TopLeft,
+        PopupPosition::TopRight,
+        PopupPosition::BottomLeft,
+        PopupPosition::BottomRight,
+    ];
+
+    /// Display names matching ALL order
+    pub const NAMES: &'static [&'static str] = &[
+        "Top Left",
+        "Top Right",
+        "Bottom Left",
+        "Bottom Right",
+    ];
+
+}
+
 /// Application configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
@@ -24,6 +58,10 @@ pub struct Config {
 
     /// Show CPU percentage on the tray icon (default: true)
     pub show_percentage: bool,
+
+    /// Where the popup appears when clicking the tray icon (default: top-right)
+    #[serde(default)]
+    pub popup_position: PopupPosition,
 }
 
 impl Default for Config {
@@ -33,6 +71,7 @@ impl Default for Config {
             max_fps: 15.0, // Faster max animation
             min_fps: 2.0,  // Faster min animation
             show_percentage: true,
+            popup_position: PopupPosition::default(),
         }
     }
 }

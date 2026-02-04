@@ -348,6 +348,8 @@ pub struct RunkatTray {
     current_frame: u8,
     /// Current CPU percentage
     cpu_percent: f32,
+    /// Per-core CPU percentages
+    per_core_cpu: Vec<f32>,
     /// Is the cat sleeping?
     is_sleeping: bool,
     /// Show percentage on icon (user preference)
@@ -371,6 +373,7 @@ impl RunkatTray {
             should_quit,
             current_frame: 0,
             cpu_percent: 0.0,
+            per_core_cpu: Vec::new(),
             is_sleeping: true,
             show_percentage,
             panel_medium_or_larger: is_panel_medium_or_larger(),
@@ -442,11 +445,40 @@ impl RunkatTray {
 }
 
 impl Tray for RunkatTray {
-    // Show menu on left-click (same as right-click)
-    const MENU_ON_ACTIVATE: bool = true;
+    // Don't show menu on left-click - we'll open popup window instead
+    const MENU_ON_ACTIVATE: bool = false;
 
     fn id(&self) -> String {
         "io.github.reality2_roycdavies.cosmic-runkat".to_string()
+    }
+
+    fn activate(&mut self, _x: i32, _y: i32) {
+        // Left-click: Open popup window with CPU details
+        // Note: x,y are always 0,0 on Wayland (no global coordinates available)
+
+        // Check if popup is already open (via lockfile)
+        let popup_lock = crate::paths::app_config_dir().join("popup.lock");
+        if popup_lock.exists() {
+            // Check if lockfile is fresh (less than 30 seconds old)
+            if let Ok(metadata) = fs::metadata(&popup_lock) {
+                if let Ok(modified) = metadata.modified() {
+                    if let Ok(elapsed) = modified.elapsed() {
+                        if elapsed.as_secs() < 30 {
+                            // Popup is already open, don't spawn another
+                            return;
+                        }
+                    }
+                }
+            }
+            // Stale lockfile, remove it
+            let _ = fs::remove_file(&popup_lock);
+        }
+
+        // Spawn popup
+        std::thread::spawn(|| {
+            let exe = std::env::current_exe().unwrap_or_default();
+            let _ = Command::new(exe).arg("--popup").spawn();
+        });
     }
 
     fn icon_theme_path(&self) -> String {
@@ -485,11 +517,20 @@ impl Tray for RunkatTray {
     }
 
     fn tool_tip(&self) -> ksni::ToolTip {
-        let status = if self.is_sleeping {
+        let mut status = if self.is_sleeping {
             format!("CPU: {:.0}% (sleeping)", self.cpu_percent)
         } else {
             format!("CPU: {:.0}%", self.cpu_percent)
         };
+
+        // Add per-core breakdown if available
+        if !self.per_core_cpu.is_empty() {
+            status.push_str("\n\nPer core:");
+            for (i, &pct) in self.per_core_cpu.iter().enumerate() {
+                status.push_str(&format!("\n  CPU{}: {:>5.1}%", i, pct));
+            }
+        }
+
         ksni::ToolTip {
             title: "RunKat".to_string(),
             description: status,
@@ -589,6 +630,7 @@ async fn run_tray_inner() -> Result<TrayExitReason, String> {
     let cpu_monitor = CpuMonitor::new();
     cpu_monitor.start(CPU_SAMPLE_INTERVAL);
     let mut cpu_rx = cpu_monitor.subscribe();
+    let mut cpu_full_rx = cpu_monitor.subscribe_full();
 
     // Note: File watcher removed - using periodic polling as it's more reliable
     // for theme and config changes. Can be re-added later with async notify if needed.
@@ -617,7 +659,7 @@ async fn run_tray_inner() -> Result<TrayExitReason, String> {
     // Main event loop (async with tokio::select!)
     loop {
         tokio::select! {
-            // CPU update event
+            // CPU update event (aggregate)
             Ok(_) = cpu_rx.changed() => {
                 let new_cpu = *cpu_rx.borrow();
 
@@ -649,6 +691,16 @@ async fn run_tray_inner() -> Result<TrayExitReason, String> {
                             tray.is_sleeping = is_sleeping;
                         }).await;
                     }
+                }
+            }
+
+            // Per-core CPU update event
+            Ok(_) = cpu_full_rx.changed() => {
+                let cpu_usage = cpu_full_rx.borrow().clone();
+                if !cpu_usage.per_core.is_empty() {
+                    handle.update(|tray| {
+                        tray.per_core_cpu = cpu_usage.per_core;
+                    }).await;
                 }
             }
 
