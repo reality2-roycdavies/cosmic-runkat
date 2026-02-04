@@ -463,6 +463,93 @@ Building on previous sessions:
 
 ---
 
+---
+
+## Theme 18: Unit Consistency in Multi-Mode Systems (Session 5 - v1.1.0)
+
+**Pattern:** When a system supports multiple modes with different units, comparisons must use consistent units.
+
+**The Bug:**
+- User set frequency threshold to 3561 MHz
+- Average frequency was ~2000 MHz
+- Cat should sleep (2000 < 3561) but kept running
+
+**Root Cause Chain:**
+1. Config validation rejected 3561 as invalid (legacy validation expected 0-20)
+2. Even after fixing validation, CPU update event was overriding sleep state
+3. Even after fixing that, frequency was being compared as percentage, not MHz
+
+**Fix:** Ensure each comparison uses the correct units:
+```rust
+// Frequency: compare MHz to MHz
+let avg_mhz = freq.per_core.iter().sum::<u32>() as f32 / freq.per_core.len() as f32;
+(metric, avg_mhz < config.sleep_threshold_freq)
+
+// Temperature: compare °C to °C
+(metric, actual_temp < config.sleep_threshold_temp)
+```
+
+**Insight:** Multi-mode systems require careful attention to units at every comparison point. A single mismatch breaks the entire feature.
+
+### Theme 19: Event Handler State Conflicts (Session 5 - v1.1.0)
+
+**Pattern:** Multiple event handlers updating the same state can create race conditions.
+
+**The Bug:**
+- Animation tick correctly set `is_sleeping` based on frequency
+- CPU update event then overwrote it based on CPU percentage
+- Result: sleep state flickered or was wrong
+
+**Fix:** Centralize state updates - only the animation tick sets `is_sleeping`:
+```rust
+// CPU update: only update display value
+handle.update(|tray| {
+    tray.cpu_percent = display_cpu;
+    // DON'T set is_sleeping here
+}).await;
+
+// Animation tick: set sleep state based on animation source
+let (_, is_sleeping) = match config.animation_source {
+    AnimationSource::CpuUsage => (metric, metric < config.sleep_threshold_cpu),
+    AnimationSource::Frequency => (metric, avg_mhz < config.sleep_threshold_freq),
+    // ...
+};
+```
+
+**Insight:** When multiple async events can fire, be explicit about which handler owns which state. Shared mutable state requires clear ownership.
+
+### Theme 20: Validation Must Evolve With Schema (Session 5 - v1.1.0)
+
+**Pattern:** Adding new config fields with different valid ranges requires updating validation.
+
+**The Bug:**
+- Added `sleep_threshold_freq` (valid: 0-10000 MHz)
+- Validation only checked legacy `sleep_threshold` (valid: 0-20)
+- Setting frequency to 3000 MHz caused entire config to be rejected
+
+**Fix:** Validate each field against its appropriate range:
+```rust
+if !(0.0..=100.0).contains(&self.sleep_threshold_cpu) { ... }
+if !(0.0..=10000.0).contains(&self.sleep_threshold_freq) { ... }
+if !(0.0..=150.0).contains(&self.sleep_threshold_temp) { ... }
+```
+
+**Insight:** Config validation is a contract. When the schema changes, the validation must change too. Silent rejection of valid data is worse than no validation.
+
+---
+
+### Updated Recommendations (Session 5 - v1.1.0)
+
+Building on previous sessions:
+
+21. **Match units at comparison points** - When comparing values, verify both sides use the same units
+22. **Single owner for shared state** - When multiple events can update state, designate one handler as owner
+23. **Evolve validation with schema** - New fields need new validation rules; don't rely on legacy checks
+24. **Debug with actual values** - When behavior is wrong, print the actual values being compared
+25. **Avoid dynamic data in cached UI** - ksni menus are cached; use live windows for real-time data
+
+---
+
 ## Transcript Access
 
 Complete conversation transcripts are available in the [transcripts/](transcripts/) directory for researchers and developers interested in the detailed dialogue patterns.
@@ -471,4 +558,5 @@ Complete conversation transcripts are available in the [transcripts/](transcript
 - Session 1: Initial development (v0.1.0 - v0.3.0)
 - Session 2: Flatpak compatibility (v0.3.x)
 - Session 3: Cross-distribution testing
-- **Session 4: v1.0.0 refactoring** (5 phases, 10 hours) - See AI_DEVELOPMENT_CASE_STUDY.md for detailed analysis
+- Session 4: v1.0.0 refactoring (5 phases, 10 hours) - See AI_DEVELOPMENT_CASE_STUDY.md for detailed analysis
+- **Session 5: v1.1.0 features** (4 hours) - CPU frequency/temperature monitoring, per-source thresholds
