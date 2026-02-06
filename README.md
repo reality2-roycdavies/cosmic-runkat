@@ -30,15 +30,57 @@ A cute running cat CPU indicator for the [COSMIC desktop environment](https://sy
 flatpak install flathub io.github.reality2_roycdavies.cosmic-runkat
 ```
 
-Then add the applet to your panel:
+### From Source (Flatpak)
+
+Requires `flatpak-builder` and the Freedesktop SDK with Rust extension.
+
+```bash
+# Install the SDK and Rust extension (if not already installed)
+flatpak install flathub org.freedesktop.Platform//25.08 org.freedesktop.Sdk//25.08
+flatpak install flathub org.freedesktop.Sdk.Extension.rust-stable//25.08
+
+# Clone and build
+git clone https://github.com/reality2-roycdavies/cosmic-runkat.git
+cd cosmic-runkat
+flatpak-builder --user --install --force-clean build-dir flathub/io.github.reality2_roycdavies.cosmic-runkat.yml
+```
+
+### From Source (Native)
+
+Requires Rust toolchain (1.75+) and COSMIC desktop libraries.
+
+```bash
+git clone https://github.com/reality2-roycdavies/cosmic-runkat.git
+cd cosmic-runkat
+cargo build --release
+
+install -Dm755 target/release/cosmic-runkat ~/.local/bin/cosmic-runkat
+install -Dm644 resources/io.github.reality2_roycdavies.cosmic-runkat.desktop ~/.local/share/applications/io.github.reality2_roycdavies.cosmic-runkat.desktop
+install -Dm644 resources/io.github.reality2_roycdavies.cosmic-runkat.svg ~/.local/share/icons/hicolor/scalable/apps/io.github.reality2_roycdavies.cosmic-runkat.svg
+install -Dm644 resources/io.github.reality2_roycdavies.cosmic-runkat-symbolic.svg ~/.local/share/icons/hicolor/symbolic/apps/io.github.reality2_roycdavies.cosmic-runkat-symbolic.svg
+```
+
+### Adding to the Panel
+
+After installing, add the applet to your COSMIC panel:
 1. Right-click the COSMIC panel → **Panel Settings**
 2. Click **+ Add Applet**
 3. Find **RunKat** and add it
 
 ### Uninstalling
 
+**Flatpak:**
 ```bash
 flatpak uninstall io.github.reality2_roycdavies.cosmic-runkat
+```
+
+**Native:**
+```bash
+rm ~/.local/bin/cosmic-runkat
+rm ~/.local/share/applications/io.github.reality2_roycdavies.cosmic-runkat.desktop
+rm ~/.local/share/icons/hicolor/scalable/apps/io.github.reality2_roycdavies.cosmic-runkat.svg
+rm ~/.local/share/icons/hicolor/symbolic/apps/io.github.reality2_roycdavies.cosmic-runkat-symbolic.svg
+rm -rf ~/.config/cosmic-runkat
 ```
 
 ## Usage
