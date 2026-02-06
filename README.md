@@ -10,7 +10,7 @@ A cute running cat CPU indicator for the [COSMIC desktop environment](https://sy
 
 | CPU Usage | CPU Frequency | CPU Temperature |
 |:---------:|:-------------:|:---------------:|
-| ![CPU Usage](screenshots/Screenshot_2026-02-06_20-48-50.png) | ![CPU Frequency](screenshots/Screenshot_2026-02-06_20-49-14.png) | ![CPU Temperature](screenshots/Screenshot_2026-02-06_20-49-27.png) |
+| ![CPU Usage](screenshots/Screenshot_2026-02-06_20-57-19.png) | ![CPU Frequency](screenshots/Screenshot_2026-02-06_20-49-14.png) | ![CPU Temperature](screenshots/Screenshot_2026-02-06_20-49-27.png) |
 
 ## Features
 
