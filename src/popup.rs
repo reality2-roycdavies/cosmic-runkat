@@ -229,7 +229,8 @@ impl PopupApp {
             }
             Message::Event(event) => {
                 match event {
-                    Event::Window(window::Event::Unfocused) => {
+                    Event::Window(window::Event::Unfocused) if !self.windowed => {
+                        // Only auto-close on unfocus in layer-shell mode (popup overlay)
                         self.should_exit = true;
                         if let Some(id) = self.surface_id.take() {
                             return destroy_layer_surface(id);
@@ -604,9 +605,17 @@ fn run_popup_windowed() -> iced::Result {
     let cpu_count = num_cpus::get();
     let height = (180 + cpu_count as u32 * 22).min(700);
 
+    let size = iced::Size::new(380.0, height as f32);
+    let window_settings = iced::window::Settings {
+        size,
+        min_size: Some(size),
+        max_size: Some(size),
+        resizable: false,
+        ..Default::default()
+    };
+
     iced::application(PopupApp::title_windowed, PopupApp::update, PopupApp::view_windowed)
         .subscription(PopupApp::subscription)
-        .window_size(iced::Size::new(380.0, height as f32))
-        .resizable(false)
+        .window(window_settings)
         .run_with(PopupApp::new_windowed)
 }
