@@ -18,23 +18,10 @@ A cute running cat CPU indicator for the [COSMIC desktop environment](https://sy
 
 ## Installation
 
-### From Source (Native)
-
-Requires Rust toolchain (1.75+) and COSMIC desktop.
+### From Flathub
 
 ```bash
-# Clone the repository
-git clone https://github.com/reality2-roycdavies/cosmic-runkat.git
-cd cosmic-runkat
-
-# Build
-cargo build --release
-
-# Install binary and desktop entry
-install -Dm755 target/release/cosmic-runkat ~/.local/bin/cosmic-runkat
-install -Dm644 resources/io.github.reality2_roycdavies.cosmic-runkat.desktop ~/.local/share/applications/io.github.reality2_roycdavies.cosmic-runkat.desktop
-install -Dm644 resources/io.github.reality2_roycdavies.cosmic-runkat.svg ~/.local/share/icons/hicolor/scalable/apps/io.github.reality2_roycdavies.cosmic-runkat.svg
-install -Dm644 resources/io.github.reality2_roycdavies.cosmic-runkat-symbolic.svg ~/.local/share/icons/hicolor/symbolic/apps/io.github.reality2_roycdavies.cosmic-runkat-symbolic.svg
+flatpak install flathub io.github.reality2_roycdavies.cosmic-runkat
 ```
 
 Then add the applet to your panel:
@@ -42,31 +29,8 @@ Then add the applet to your panel:
 2. Click **+ Add Applet**
 3. Find **RunKat** and add it
 
-### From Source (Flatpak)
-
-```bash
-# Install Flatpak SDK (if not already installed)
-flatpak install flathub org.freedesktop.Platform//25.08 org.freedesktop.Sdk//25.08
-flatpak install flathub org.freedesktop.Sdk.Extension.rust-stable//25.08
-
-# Clone and build
-git clone https://github.com/reality2-roycdavies/cosmic-runkat.git
-cd cosmic-runkat
-flatpak-builder --user --install --force-clean build-dir flathub/io.github.reality2_roycdavies.cosmic-runkat.yml
-```
-
 ### Uninstalling
 
-**Native install:**
-```bash
-rm ~/.local/bin/cosmic-runkat
-rm ~/.local/share/applications/io.github.reality2_roycdavies.cosmic-runkat.desktop
-rm ~/.local/share/icons/hicolor/scalable/apps/io.github.reality2_roycdavies.cosmic-runkat.svg
-rm ~/.local/share/icons/hicolor/symbolic/apps/io.github.reality2_roycdavies.cosmic-runkat-symbolic.svg
-rm -rf ~/.config/cosmic-runkat
-```
-
-**Flatpak:**
 ```bash
 flatpak uninstall io.github.reality2_roycdavies.cosmic-runkat
 ```
@@ -111,7 +75,7 @@ Settings can also be changed via the Settings window (click applet → Settings 
 ## Architecture
 
 ```
-cosmic-runkat (v2.0.0)
+cosmic-runkat (v2.1.0)
 ├── src/
 │   ├── main.rs        # Entry point, CLI parsing
 │   ├── applet.rs      # Native COSMIC panel applet
@@ -120,7 +84,6 @@ cosmic-runkat (v2.0.0)
 │   ├── cpu.rs         # CPU monitoring with watch channels
 │   ├── sysinfo.rs     # CPU frequency/temperature from sysfs
 │   ├── theme.rs       # Theme detection (RON parsing)
-│   ├── paths.rs       # Flatpak-aware path resolution
 │   ├── constants.rs   # Application-wide constants
 │   └── error.rs       # Error types
 ├── resources/         # PNG sprites, icons, desktop entry, metainfo
