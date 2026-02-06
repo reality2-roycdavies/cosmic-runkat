@@ -54,6 +54,8 @@ struct PopupApp {
     accent_color: (u8, u8, u8),
     /// Whether we should exit
     should_exit: bool,
+    /// Tick count for auto-exit safety (exits if surface never created)
+    tick_count: u32,
 }
 
 impl Default for PopupApp {
@@ -71,6 +73,7 @@ impl Default for PopupApp {
             cpu_temperature: CpuTemperature::read(),
             accent_color: theme_colors.foreground,
             should_exit: false,
+            tick_count: 0,
         }
     }
 }
@@ -162,9 +165,10 @@ impl PopupApp {
             }
             Message::Close => {
                 self.should_exit = true;
-                if let Some(id) = self.surface_id {
+                if let Some(id) = self.surface_id.take() {
                     return destroy_layer_surface(id);
                 }
+                std::process::exit(0);
             }
             Message::OpenSettings => {
                 std::thread::spawn(|| {
@@ -172,11 +176,24 @@ impl PopupApp {
                     let _ = Command::new(exe).arg("--settings").spawn();
                 });
                 self.should_exit = true;
-                if let Some(id) = self.surface_id {
+                if let Some(id) = self.surface_id.take() {
                     return destroy_layer_surface(id);
                 }
+                std::process::exit(0);
             }
             Message::Tick => {
+                // Auto-exit safety: if should_exit is set, exit on next tick
+                if self.should_exit {
+                    std::process::exit(0);
+                }
+
+                // Auto-exit if surface was never created after 10 ticks (5 seconds)
+                self.tick_count += 1;
+                if self.tick_count > 10 && self.surface_id.is_none() {
+                    tracing::warn!("Popup surface never created, exiting");
+                    std::process::exit(1);
+                }
+
                 self.cpu_usage = self.cpu_monitor.current_full();
                 self.cpu_frequency = CpuFrequency::read();
                 self.cpu_temperature = CpuTemperature::read();
@@ -188,26 +205,24 @@ impl PopupApp {
                 match event {
                     Event::Window(window::Event::Unfocused) => {
                         self.should_exit = true;
-                        if let Some(id) = self.surface_id {
+                        if let Some(id) = self.surface_id.take() {
                             return destroy_layer_surface(id);
                         }
+                        std::process::exit(0);
                     }
                     Event::Keyboard(iced::keyboard::Event::KeyPressed {
                         key: iced::keyboard::Key::Named(iced::keyboard::key::Named::Escape),
                         ..
                     }) => {
                         self.should_exit = true;
-                        if let Some(id) = self.surface_id {
+                        if let Some(id) = self.surface_id.take() {
                             return destroy_layer_surface(id);
                         }
+                        std::process::exit(0);
                     }
                     _ => {}
                 }
             }
-        }
-
-        if self.should_exit && self.surface_id.is_none() {
-            std::process::exit(0);
         }
 
         Task::none()
