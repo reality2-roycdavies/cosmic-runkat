@@ -1,6 +1,42 @@
-# Migration Guide: cosmic-runkat 0.3.x → 1.0.0
+# Migration Guide
 
-This guide helps you upgrade from cosmic-runkat 0.3.x to 1.0.0.
+## cosmic-runkat 1.x → 2.0.0
+
+v2.0.0 is a complete architecture rewrite from a ksni system tray application to a native COSMIC panel applet.
+
+### Breaking Changes
+
+**Removed: System tray mode (`--tray`)**
+The app is now a native COSMIC panel applet. There is no `--tray` flag. The applet is launched automatically by the COSMIC panel.
+
+**Removed: Popup process (`--popup`)**
+The popup is now built into the applet. No separate popup process is spawned.
+
+**Removed: Autostart**
+The applet runs as part of the COSMIC panel — no autostart entry is needed. Remove any old autostart files:
+```bash
+rm ~/.config/autostart/io.github.reality2_roycdavies.cosmic-runkat.desktop
+```
+
+**Removed: D-Bus/SNI dependency**
+The `ksni` and `notify` crates have been removed. The applet uses native COSMIC APIs.
+
+**Changed: Installation**
+You must now add the applet to your COSMIC panel:
+1. Install the binary and desktop entry (see README)
+2. Right-click panel → Panel Settings → Add Applet → RunKat
+
+**Unchanged: Config file**
+`~/.config/cosmic-runkat/config.json` is fully compatible. No changes needed.
+
+**Unchanged: Settings window**
+`cosmic-runkat --settings` still works.
+
+---
+
+## cosmic-runkat 0.3.x → 1.0.0
+
+This section covers the older migration from 0.3.x to 1.0.0.
 
 ## Breaking Changes
 

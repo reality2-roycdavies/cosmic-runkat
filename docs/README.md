@@ -12,9 +12,11 @@ This is the second project developed using this approach, following [cosmic-bing
 
 | Document | Description |
 |----------|-------------|
+| [ARCHITECTURE.md](ARCHITECTURE.md) | v2.0.0 native COSMIC applet architecture |
+| [AI_DEVELOPMENT_CASE_STUDY.md](AI_DEVELOPMENT_CASE_STUDY.md) | v1.0.0 refactoring case study |
 | [DEVELOPMENT.md](DEVELOPMENT.md) | Technical learnings and solutions discovered during development |
 | [THEMATIC_ANALYSIS.md](THEMATIC_ANALYSIS.md) | Analysis of patterns in AI-assisted development |
-| [transcripts/](transcripts/) | Complete conversation logs from the development session |
+| [transcripts/](transcripts/) | Complete conversation logs from the development sessions |
 
 ### Shared Documentation
 

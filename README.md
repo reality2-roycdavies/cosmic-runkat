@@ -6,208 +6,141 @@ A cute running cat CPU indicator for the [COSMIC desktop environment](https://sy
 ![Rust](https://img.shields.io/badge/rust-2021-orange.svg)
 ![COSMIC](https://img.shields.io/badge/desktop-COSMIC-purple.svg)
 
-## About This Project
-
-This project was developed as an **educational exercise** in collaborative AI-assisted software development, following the same approach used for [cosmic-bing-wallpaper](https://github.com/reality2-roycdavies/cosmic-bing-wallpaper). The entire application was built through iterative conversation between a human developer and Claude (Anthropic's AI assistant) using Claude Code.
-
-**Development timeline:**
-- **v0.1.0 - v0.3.4**: Initial development (~5 hours) - Creating the application
-- **v1.0.0**: Production refactor (~10 hours) - Transforming to production quality
-
-The complete development process, including conversations, design decisions, and technical analysis, has been documented in the [docs/](docs/) directory. This includes:
-- Full conversation transcripts
-- Thematic analysis of AI collaboration patterns
-- Technical development notes
-- **NEW**: Complete v1.0.0 refactoring case study (5 phases, hobbyist → production)
-
-**See [docs/AI_DEVELOPMENT_CASE_STUDY.md](docs/AI_DEVELOPMENT_CASE_STUDY.md) for a detailed analysis of the v1.0.0 refactoring process.**
-
-### What the Thematic Analysis Revealed
-
-A thematic analysis of our conversation transcripts identified key patterns across 3 development sessions:
-
-| Theme | Finding |
-|-------|---------|
-| **Leveraging Prior Learning** | Built on lessons from cosmic-bing-wallpaper (pixmap icons, inotify, architecture) |
-| **Iterative Visual Refinement** | Cat animation went through 5+ iterations based on real-time visual feedback |
-| **Platform-Specific Discovery** | COSMIC internals discovered empirically (panel sizes, theme config locations) |
-| **User Experience Simplification** | Removed animation speed settings—"they make no sense to an average user" |
-| **Cross-Project Bug Fixes** | Lockfile bug found in cosmic-bing-wallpaper immediately fixed here too |
-| **SDK Extension Version Matching** | Flatpak apps need matching SDK extension versions per runtime |
-| **Library vs Platform Conventions** | ksni defaults (right-click menu) didn't match user expectations (left-click) |
-
-The emerging model of AI-assisted development:
-
-| Role | AI | Human |
-|------|:---:|:-----:|
-| Write code | ✓ | |
-| Fix compilation errors | ✓ | |
-| Propose solutions | ✓ | |
-| Test in real environment | | ✓ |
-| Recognise incorrect behaviour | | ✓ |
-| Test across session boundaries | | ✓ |
-| **Test across distributions** | | ✓ |
-| Make final decisions | | ✓ |
-| Know when to stop | | ✓ |
-
-*See [docs/THEMATIC_ANALYSIS.md](docs/THEMATIC_ANALYSIS.md) for the complete analysis (14 themes across 3 sessions).*
-
-### Credits
-
-- **Original Inspiration**: [RunCat](https://github.com/Kyome22/RunCat_for_windows) by Kyome22 - A delightful macOS/Windows app that shows a running cat in the menu bar whose speed reflects CPU usage
-- **COSMIC Desktop**: [System76's COSMIC](https://github.com/pop-os/cosmic-epoch) - The next-generation Linux desktop environment
-- **Development**: Dr. Roy C. Davies and Claude (Anthropic's AI) using Claude Code
-
 ## Features
 
-- **Animated Cat**: A pixel art cat runs in your system tray
-- **CPU-Based Speed**: The cat runs faster when CPU usage is higher
-- **Sleep Mode**: Cat curls up and sleeps when CPU drops below a configurable threshold
-- **CPU Percentage Display**: Optional percentage shown beside the cat (hidden when sleeping)
-- **Theme-Aware**: Dynamically recolors icons using COSMIC theme colors
-- **Panel-Size Aware**: Percentage only shown on medium or larger panels
-- **Instant Updates**: Uses inotify file watching for immediate theme/config changes
+- **Native COSMIC Panel Applet**: Integrates directly into the COSMIC panel
+- **Animated Cat**: A pixel art cat runs in your panel, speed driven by CPU usage, frequency, or temperature
+- **Sleep Mode**: Cat curls up and sleeps when the metric drops below a configurable threshold
+- **CPU Percentage Display**: Optional percentage shown beside the cat
+- **Per-Core Popup**: Click the applet to see per-core CPU usage, frequency, and temperature stats
+- **Theme-Aware**: Dynamically recolors the cat using COSMIC theme colors
 - **Settings App**: libcosmic-based settings window for configuration
 
 ## Installation
 
-Build and install the Flatpak package from GitHub:
+### From Source (Native)
+
+Requires Rust toolchain (1.75+) and COSMIC desktop.
 
 ```bash
-# Install flatpak-builder if not already installed
-sudo apt install flatpak-builder  # Debian/Ubuntu/Pop!_OS
-sudo pacman -S flatpak-builder    # Arch/Manjaro
-
-# Install required Flatpak SDK (if not already installed)
-flatpak install flathub org.freedesktop.Platform//25.08 org.freedesktop.Sdk//25.08
-flatpak install flathub org.freedesktop.Sdk.Extension.rust-stable//25.08
-
 # Clone the repository
 git clone https://github.com/reality2-roycdavies/cosmic-runkat.git
 cd cosmic-runkat
 
-# Build and install the Flatpak (first build takes a while)
+# Build
+cargo build --release
+
+# Install binary and desktop entry
+install -Dm755 target/release/cosmic-runkat ~/.local/bin/cosmic-runkat
+install -Dm644 resources/io.github.reality2_roycdavies.cosmic-runkat.desktop ~/.local/share/applications/io.github.reality2_roycdavies.cosmic-runkat.desktop
+install -Dm644 resources/io.github.reality2_roycdavies.cosmic-runkat.svg ~/.local/share/icons/hicolor/scalable/apps/io.github.reality2_roycdavies.cosmic-runkat.svg
+install -Dm644 resources/io.github.reality2_roycdavies.cosmic-runkat-symbolic.svg ~/.local/share/icons/hicolor/symbolic/apps/io.github.reality2_roycdavies.cosmic-runkat-symbolic.svg
+```
+
+Then add the applet to your panel:
+1. Right-click the COSMIC panel → **Panel Settings**
+2. Click **+ Add Applet**
+3. Find **RunKat** and add it
+
+### From Source (Flatpak)
+
+```bash
+# Install Flatpak SDK (if not already installed)
+flatpak install flathub org.freedesktop.Platform//25.08 org.freedesktop.Sdk//25.08
+flatpak install flathub org.freedesktop.Sdk.Extension.rust-stable//25.08
+
+# Clone and build
+git clone https://github.com/reality2-roycdavies/cosmic-runkat.git
+cd cosmic-runkat
 flatpak-builder --user --install --force-clean build-dir flathub/io.github.reality2_roycdavies.cosmic-runkat.yml
+```
 
-# Run the tray (will auto-start on future logins)
-flatpak run io.github.reality2_roycdavies.cosmic-runkat --tray
+### Uninstalling
 
-# Open settings
-flatpak run io.github.reality2_roycdavies.cosmic-runkat
+**Native install:**
+```bash
+rm ~/.local/bin/cosmic-runkat
+rm ~/.local/share/applications/io.github.reality2_roycdavies.cosmic-runkat.desktop
+rm ~/.local/share/icons/hicolor/scalable/apps/io.github.reality2_roycdavies.cosmic-runkat.svg
+rm ~/.local/share/icons/hicolor/symbolic/apps/io.github.reality2_roycdavies.cosmic-runkat-symbolic.svg
+rm -rf ~/.config/cosmic-runkat
+```
+
+**Flatpak:**
+```bash
+flatpak uninstall io.github.reality2_roycdavies.cosmic-runkat
 ```
 
 ## Usage
 
-```bash
-# Open settings (starts tray automatically if not running)
-flatpak run io.github.reality2_roycdavies.cosmic-runkat
+The applet runs as part of the COSMIC panel. Click it to open a popup showing per-core CPU stats.
 
-# Run the system tray only (for autostart)
-flatpak run io.github.reality2_roycdavies.cosmic-runkat --tray
+```bash
+# Open settings window directly
+cosmic-runkat --settings
 
 # Show help
-flatpak run io.github.reality2_roycdavies.cosmic-runkat --help
+cosmic-runkat --help
 ```
-
-The tray automatically creates an XDG autostart entry on first run, so it starts on login.
 
 ## Configuration
 
 Configuration is stored at `~/.config/cosmic-runkat/config.json`:
 
-```json
-{
-  "sleep_threshold": 5.0,
-  "max_fps": 15.0,
-  "min_fps": 2.0,
-  "show_percentage": true
-}
-```
-
 | Option | Description | Default |
 |--------|-------------|---------|
-| `sleep_threshold` | CPU % below which the cat sleeps | 5.0 |
+| `animation_source` | What drives the cat speed: `cpu-usage`, `frequency`, or `temperature` | `cpu-usage` |
+| `sleep_threshold_cpu` | CPU % below which the cat sleeps | 5.0 |
+| `sleep_threshold_freq` | Frequency (MHz) below which the cat sleeps | 1000.0 |
+| `sleep_threshold_temp` | Temperature (°C) below which the cat sleeps | 40.0 |
 | `max_fps` | Maximum animation speed (frames/sec) | 15.0 |
 | `min_fps` | Minimum animation speed when running | 2.0 |
 | `show_percentage` | Show CPU % beside the cat | true |
 
-Settings can also be changed via the Settings app (right-click tray icon > Settings).
+Settings can also be changed via the Settings window (click applet → Settings button, or run `cosmic-runkat --settings`).
 
 ## How It Works
 
 1. **CPU Monitoring**: Uses `systemstat` crate to sample CPU usage every 500ms
-2. **Smoothing**: 10-sample moving average (5 seconds) for stable readings
-3. **Animation Speed**: Linear interpolation between min/max FPS based on CPU %
-4. **Sleep Logic**: Cat sleeps when rounded CPU % is below threshold
-5. **Icon Composition**: Cat animation frames + digit sprites composited at runtime
-6. **Theme Detection**: Watches COSMIC's theme config file for instant dark/light switching
-7. **Panel Detection**: Reads COSMIC panel size config to show/hide percentage
+2. **Frequency/Temperature**: Reads `/sys/devices/system/cpu/` and `/sys/class/hwmon/` for live data
+3. **Animation Speed**: Linear interpolation between min/max FPS based on the selected metric
+4. **Sleep Logic**: Cat sleeps when the metric drops below the configured threshold
+5. **Sprite Rendering**: Cat animation frames loaded as embedded PNGs, recolored to match COSMIC theme
+6. **Panel Integration**: Native COSMIC applet API with popup support
 
 ## Architecture
 
 ```
-cosmic-runkat (v1.0.0)
+cosmic-runkat (v2.0.0)
 ├── src/
-│   ├── main.rs        # Entry point, CLI parsing, autostart setup
-│   ├── tray.rs        # Async event-driven system tray
-│   ├── settings.rs    # libcosmic settings app
+│   ├── main.rs        # Entry point, CLI parsing
+│   ├── applet.rs      # Native COSMIC panel applet
+│   ├── settings.rs    # libcosmic settings window
 │   ├── config.rs      # Configuration with validation
 │   ├── cpu.rs         # CPU monitoring with watch channels
-│   ├── theme.rs       # Theme detection abstraction (NEW in 1.0)
-│   ├── paths.rs       # Flatpak-aware path resolution (NEW in 1.0)
-│   ├── constants.rs   # Application-wide constants (NEW in 1.0)
-│   └── error.rs       # Error types (NEW in 1.0)
-├── resources/         # PNG sprites (cat frames, digits)
+│   ├── sysinfo.rs     # CPU frequency/temperature from sysfs
+│   ├── theme.rs       # Theme detection (RON parsing)
+│   ├── paths.rs       # Flatpak-aware path resolution
+│   ├── constants.rs   # Application-wide constants
+│   └── error.rs       # Error types
+├── resources/         # PNG sprites, icons, desktop entry, metainfo
 ├── docs/              # Development documentation
-│   ├── AI_DEVELOPMENT_CASE_STUDY.md  # v1.0.0 refactoring (NEW)
-│   ├── DEVELOPMENT.md                # Technical notes
-│   ├── THEMATIC_ANALYSIS.md          # AI collaboration patterns
-│   └── transcripts/                  # Complete conversations
-├── MIGRATION.md       # Upgrade guide 0.3.x → 1.0.0 (NEW)
 └── flathub/           # Flatpak packaging
 ```
 
-**v1.0.0 Improvements:**
-- Async event-driven architecture (tokio::select!)
-- 85-95% CPU usage reduction
-- Comprehensive error handling
-- 20 unit tests (was 2)
-- Structured logging with tracing
-- Production-ready code quality
+## About This Project
 
-## Development Documentation
+This project was developed as an **educational exercise** in collaborative AI-assisted software development, following the same approach used for [cosmic-bing-wallpaper](https://github.com/reality2-roycdavies/cosmic-bing-wallpaper). The entire application was built through iterative conversation between a human developer and Claude (Anthropic's AI) using Claude Code.
 
-The [docs/](docs/) directory contains comprehensive educational materials:
+The complete development process, including conversations, design decisions, and technical analysis, has been documented in the [docs/](docs/) directory.
 
-- **AI_DEVELOPMENT_CASE_STUDY.md**: Complete v1.0.0 refactoring case study (NEW)
-  - 5-phase transformation from hobbyist to production quality
-  - Performance analysis (85-95% CPU reduction)
-  - Technical decision rationale
-  - AI collaboration patterns
-  - Lessons learned
+**See [docs/AI_DEVELOPMENT_CASE_STUDY.md](docs/AI_DEVELOPMENT_CASE_STUDY.md) for a detailed analysis of the v1.0.0 refactoring process.**
 
-- **DEVELOPMENT.md**: Technical notes and learnings from the development process
-  - System tray implementation
-  - Dynamic icon composition
-  - CPU monitoring strategies
-  - COSMIC integration techniques
+### Credits
 
-- **THEMATIC_ANALYSIS.md**: 14 themes identified across development sessions
-  - Iterative visual refinement
-  - Platform-specific discovery
-  - Cross-project learning
-  - AI-human collaboration patterns
-
-- **transcripts/**: Complete conversation transcripts for educational purposes
-  - `session-01.md`: Initial development through final polish
-  - `session-02.md`: Cross-distribution Flatpak testing on Pop!_OS
-  - `session-03.md`: v1.0.0 refactoring (5 phases) - Coming soon
-
-## Uninstalling
-
-```bash
-flatpak uninstall io.github.reality2_roycdavies.cosmic-runkat
-```
+- **Original Inspiration**: [RunCat](https://github.com/Kyome22/RunCat_for_windows) by Kyome22
+- **COSMIC Desktop**: [System76's COSMIC](https://github.com/pop-os/cosmic-epoch)
+- **Development**: Dr. Roy C. Davies and Claude (Anthropic's AI) using Claude Code
 
 ## License
 
@@ -217,7 +150,4 @@ MIT License - See [LICENSE](LICENSE) for details.
 
 - [cosmic-bing-wallpaper](https://github.com/reality2-roycdavies/cosmic-bing-wallpaper) - Another COSMIC app developed with the same AI-assisted approach
 - [RunCat](https://github.com/Kyome22/RunCat_for_windows) - The original inspiration for this project
-
----
-
-*This project was developed collaboratively by Dr. Roy C. Davies and Claude (Anthropic's AI) using Claude Code. See the [docs/](docs/) directory for the full development story.*
+- [minimon-applet](https://github.com/cosmic-utils/minimon-applet) - A similar COSMIC panel applet for system monitoring
