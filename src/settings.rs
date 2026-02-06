@@ -161,8 +161,14 @@ impl Application for SettingsApp {
                         .step(1.0)
                         .width(Length::Fill),
                     ),
-            ))
-            .add(settings::item("Popup Position", position_dropdown));
+            ));
+
+        // Popup position only works in native mode (layer-shell);
+        // Flatpak uses a regular window where the compositor controls placement.
+        if !crate::paths::is_flatpak() {
+            behavior_section = behavior_section
+                .add(settings::item("Popup Position", position_dropdown));
+        }
 
         // Only show CPU percentage toggle when monitoring CPU usage
         if self.config.animation_source == AnimationSource::CpuUsage {
