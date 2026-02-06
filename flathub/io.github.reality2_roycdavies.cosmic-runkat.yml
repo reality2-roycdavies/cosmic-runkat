@@ -7,14 +7,11 @@ sdk-extensions:
 command: cosmic-runkat
 
 finish-args:
-  # Wayland/X11 display access
-  - --share=ipc
-  - --socket=fallback-x11
+  # Wayland display access (COSMIC panel applet)
   - --socket=wayland
-  # GPU access for libcosmic/wgpu settings window rendering
+  # GPU access for libcosmic/wgpu rendering
   - --device=dri
-  # System tray via StatusNotifierItem (D-Bus)
-  - --talk-name=org.kde.StatusNotifierWatcher
+  # Portal access
   - --talk-name=org.freedesktop.portal.*
   # Host filesystem read-only for /proc/stat CPU monitoring
   - --filesystem=host:ro
@@ -22,8 +19,6 @@ finish-args:
   - --filesystem=~/.config/cosmic:ro
   # App config storage
   - --filesystem=~/.config/cosmic-runkat:create
-  # Autostart entry
-  - --filesystem=~/.config/autostart:create
 
 modules:
   - name: cosmic-runkat
@@ -43,6 +38,6 @@ modules:
     sources:
       - type: git
         url: https://github.com/reality2-roycdavies/cosmic-runkat.git
-        tag: v1.0.0
-        commit: a0fe560e685850b930b7096bbeee858d6027f4ee
+        tag: v1.1.0
+        commit: 17631f9e289be974b978eba10cc2ce7efd6caaac
       - cargo-sources.json

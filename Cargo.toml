@@ -8,16 +8,12 @@ description = "A cute running cat CPU indicator for COSMIC desktop"
 repository = "https://github.com/reality2-roycdavies/cosmic-runkat"
 
 [dependencies]
-# COSMIC GUI toolkit (for settings app and layer-shell popup)
+# COSMIC GUI toolkit (native panel applet)
 libcosmic = { git = "https://github.com/pop-os/libcosmic.git", default-features = false, features = [
-    "a11y",
-    "tokio",
-    "winit",
-    "wgpu",
-    "wayland",
+    "applet",
 ] }
 
-# Async runtime (optimized features for Phase 3)
+# Async runtime
 tokio = { version = "1", features = ["rt", "sync", "time", "macros"] }
 
 # System statistics (CPU monitoring)
@@ -33,18 +29,13 @@ dirs = "6"
 # CPU count detection
 num_cpus = "1.16"
 
-# System tray (StatusNotifierItem protocol)
-# Using native async API (removed "blocking" feature for Phase 3)
-ksni = { version = "0.3" }
+# Image processing (sprite loading and theme recoloring)
 image = "0.24"
-
-# File system watching for theme changes
-notify = "6"
 
 # Error handling
 thiserror = "2.0"
 
-# Structured logging (Phase 3)
+# Structured logging
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 

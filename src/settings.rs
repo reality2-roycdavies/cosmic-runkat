@@ -7,10 +7,10 @@ use cosmic::iced::Length;
 use cosmic::widget::{self, settings, text, toggler};
 use cosmic::{Action, Application, Element, Task};
 
-use crate::config::{AnimationSource, Config, PopupPosition};
+use crate::config::{AnimationSource, Config};
 
-/// Application ID
-pub const APP_ID: &str = "io.github.reality2_roycdavies.cosmic-runkat";
+/// Application ID (settings uses the same app ID with different window)
+const APP_ID: &str = "io.github.reality2_roycdavies.cosmic-runkat.settings";
 
 /// Messages for the settings application
 #[derive(Debug, Clone)]
@@ -19,12 +19,8 @@ pub enum Message {
     SleepThresholdChanged(f32),
     /// Show percentage toggled
     ShowPercentageToggled(bool),
-    /// Popup position changed
-    PopupPositionChanged(PopupPosition),
     /// Animation source changed
     AnimationSourceChanged(AnimationSource),
-    /// Periodic tick for lockfile refresh
-    Tick,
 }
 
 /// Settings application state
@@ -62,7 +58,6 @@ impl Application for SettingsApp {
 
     fn init(core: Core, _flags: Self::Flags) -> (Self, Task<Action<Self::Message>>) {
         let config = Config::load();
-
         (Self { core, config }, Task::none())
     }
 
@@ -74,45 +69,18 @@ impl Application for SettingsApp {
             }
             Message::ShowPercentageToggled(value) => {
                 self.config.show_percentage = value;
-                // Save immediately so tray updates
-                let _ = self.config.save();
-            }
-            Message::PopupPositionChanged(position) => {
-                self.config.popup_position = position;
                 let _ = self.config.save();
             }
             Message::AnimationSourceChanged(source) => {
-                // Each source has its own threshold that persists
                 self.config.animation_source = source;
                 let _ = self.config.save();
-            }
-            Message::Tick => {
-                // Refresh the GUI lockfile to indicate we're still running
-                crate::create_gui_lockfile();
             }
         }
         Task::none()
     }
 
-    fn subscription(&self) -> cosmic::iced::Subscription<Self::Message> {
-        // Refresh lockfile every 30 seconds
-        cosmic::iced::time::every(std::time::Duration::from_secs(30)).map(|_| Message::Tick)
-    }
-
     fn view(&self) -> Element<'_, Self::Message> {
-        // Page title (large, like COSMIC Settings)
         let page_title = text::title1("RunKat Settings");
-
-        // Build popup position dropdown
-        let selected_position_index = PopupPosition::ALL
-            .iter()
-            .position(|&p| p == self.config.popup_position);
-        let position_dropdown = widget::dropdown(
-            PopupPosition::NAMES,
-            selected_position_index,
-            |idx| Message::PopupPositionChanged(PopupPosition::ALL[idx]),
-        )
-        .width(Length::Fixed(150.0));
 
         // Build animation source dropdown
         let selected_source_index = AnimationSource::ALL
@@ -126,23 +94,21 @@ impl Application for SettingsApp {
         .width(Length::Fixed(150.0));
 
         // Sleep threshold label and range based on animation source
-        // For frequency, get max MHz to display threshold in MHz
         let freq_info = crate::sysinfo::CpuFrequency::read();
         let max_freq_mhz = freq_info.max_per_core.first().copied().unwrap_or(5000) as f32;
 
-        let (threshold_label, threshold_range, threshold_unit) = match self.config.animation_source {
-            AnimationSource::CpuUsage => ("Sleep Below", 0.0..=30.0, "%"),
-            AnimationSource::Frequency => ("Sleep Below", 0.0..=max_freq_mhz, " MHz"),
-            AnimationSource::Temperature => ("Sleep Below", 20.0..=100.0, "°C"),
-        };
+        let (threshold_label, threshold_range, threshold_unit) =
+            match self.config.animation_source {
+                AnimationSource::CpuUsage => ("Sleep Below", 0.0..=30.0, "%"),
+                AnimationSource::Frequency => ("Sleep Below", 0.0..=max_freq_mhz, " MHz"),
+                AnimationSource::Temperature => ("Sleep Below", 20.0..=100.0, "\u{00b0}C"),
+            };
 
-        // Get current threshold for the active mode
-        let display_threshold = self.config.current_threshold().clamp(
-            *threshold_range.start(),
-            *threshold_range.end(),
-        );
+        let display_threshold = self
+            .config
+            .current_threshold()
+            .clamp(*threshold_range.start(), *threshold_range.end());
 
-        // Build main section
         let mut behavior_section = settings::section()
             .title("Behavior")
             .add(settings::item("Monitor", source_dropdown))
@@ -151,7 +117,10 @@ impl Application for SettingsApp {
                 widget::row()
                     .spacing(8)
                     .align_y(cosmic::iced::Alignment::Center)
-                    .push(text::body(format!("{:.0}{}", display_threshold, threshold_unit)))
+                    .push(text::body(format!(
+                        "{:.0}{}",
+                        display_threshold, threshold_unit
+                    )))
                     .push(
                         widget::slider(
                             threshold_range,
@@ -163,13 +132,6 @@ impl Application for SettingsApp {
                     ),
             ));
 
-        // Popup position only works in native mode (layer-shell);
-        // Flatpak uses a regular window where the compositor controls placement.
-        if !crate::paths::is_flatpak() {
-            behavior_section = behavior_section
-                .add(settings::item("Popup Position", position_dropdown));
-        }
-
         // Only show CPU percentage toggle when monitoring CPU usage
         if self.config.animation_source == AnimationSource::CpuUsage {
             behavior_section = behavior_section.add(settings::item(
@@ -178,10 +140,12 @@ impl Application for SettingsApp {
             ));
         }
 
-        // Use settings::view_column for proper COSMIC styling
         let content = settings::view_column(vec![
             page_title.into(),
-            text::caption("The cat runs faster based on the selected metric. Click the tray icon to see details.").into(),
+            text::caption(
+                "The cat runs faster based on the selected metric. Click the panel applet to see details.",
+            )
+            .into(),
             behavior_section.into(),
         ]);
 
@@ -196,7 +160,6 @@ impl Application for SettingsApp {
 
 /// Run the settings application
 pub fn run_settings() -> cosmic::iced::Result {
-    let settings = cosmic::app::Settings::default().size(cosmic::iced::Size::new(850.0, 420.0));
-
+    let settings = cosmic::app::Settings::default().size(cosmic::iced::Size::new(850.0, 380.0));
     cosmic::app::run::<SettingsApp>(settings, ())
 }

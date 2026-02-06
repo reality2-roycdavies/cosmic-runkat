@@ -125,18 +125,6 @@ impl CpuMonitor {
         self.full_rx.borrow().clone()
     }
 
-    /// Subscribe to CPU updates (for async event-driven architecture)
-    ///
-    /// Returns a watch::Receiver that can be used with tokio::select!
-    /// to react to CPU changes.
-    pub fn subscribe(&self) -> watch::Receiver<f32> {
-        self.rx.clone()
-    }
-
-    /// Subscribe to full CPU usage updates (aggregate + per-core)
-    pub fn subscribe_full(&self) -> watch::Receiver<CpuUsage> {
-        self.full_rx.clone()
-    }
 }
 
 impl Default for CpuMonitor {

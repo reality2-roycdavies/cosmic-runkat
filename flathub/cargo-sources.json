@@ -4118,6 +4118,19 @@
     {
         "type": "archive",
         "archive-type": "tar-gzip",
+        "url": "https://static.crates.io/crates/memmap2/memmap2-0.8.0.crate",
+        "sha256": "43a5a03cefb0d953ec0be133036f14e109412fa594edc2f77227249db66cc3ed",
+        "dest": "cargo/vendor/memmap2-0.8.0"
+    },
+    {
+        "type": "inline",
+        "contents": "{\"package\": \"43a5a03cefb0d953ec0be133036f14e109412fa594edc2f77227249db66cc3ed\", \"files\": {}}",
+        "dest": "cargo/vendor/memmap2-0.8.0",
+        "dest-filename": ".cargo-checksum.json"
+    },
+    {
+        "type": "archive",
+        "archive-type": "tar-gzip",
         "url": "https://static.crates.io/crates/memmap2/memmap2-0.9.9.crate",
         "sha256": "744133e4a0e0a658e1374cf3bf8e415c4052a15a111acd372764c55b4177d490",
         "dest": "cargo/vendor/memmap2-0.9.9"
@@ -8532,6 +8545,19 @@
         "type": "inline",
         "contents": "{\"package\": \"ec1cdab258fb55c0da61328dc52c8764709b249011b2cad0454c72f0bf10a1f6\", \"files\": {}}",
         "dest": "cargo/vendor/xdg-home-1.3.0",
+        "dest-filename": ".cargo-checksum.json"
+    },
+    {
+        "type": "archive",
+        "archive-type": "tar-gzip",
+        "url": "https://static.crates.io/crates/xkbcommon/xkbcommon-0.7.0.crate",
+        "sha256": "13867d259930edc7091a6c41b4ce6eee464328c6ff9659b7e4c668ca20d4c91e",
+        "dest": "cargo/vendor/xkbcommon-0.7.0"
+    },
+    {
+        "type": "inline",
+        "contents": "{\"package\": \"13867d259930edc7091a6c41b4ce6eee464328c6ff9659b7e4c668ca20d4c91e\", \"files\": {}}",
+        "dest": "cargo/vendor/xkbcommon-0.7.0",
         "dest-filename": ".cargo-checksum.json"
     },
     {

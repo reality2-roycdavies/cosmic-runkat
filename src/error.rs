@@ -1,6 +1,6 @@
 //! Error types for cosmic-runkat
 
-#![allow(dead_code)] // Error types used in later phases
+#![allow(dead_code)]
 
 use thiserror::Error;
 
@@ -19,10 +19,6 @@ pub enum RunkatError {
     #[error("Invalid configuration: {0}")]
     ConfigValidation(String),
 
-    /// Tray initialization failed
-    #[error("Tray initialization failed: {0}")]
-    TrayInit(String),
-
     /// Theme detection/loading error
     #[error("Theme error: {0}")]
     Theme(String),
@@ -30,10 +26,6 @@ pub enum RunkatError {
     /// I/O error
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
-
-    /// D-Bus communication error
-    #[error("D-Bus error: {0}")]
-    DBus(String),
 }
 
 /// Convenient result type using RunkatError

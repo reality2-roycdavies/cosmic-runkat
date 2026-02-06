@@ -25,6 +25,7 @@ pub enum PopupPosition {
     BottomRight,
 }
 
+#[allow(dead_code)]
 impl PopupPosition {
     /// All available positions
     pub const ALL: &'static [PopupPosition] = &[
@@ -334,16 +335,16 @@ mod tests {
     }
 
     #[test]
-    fn test_config_validation_sleep_threshold_too_low() {
+    fn test_config_validation_cpu_threshold_too_low() {
         let mut config = Config::default();
-        config.sleep_threshold = -5.0;
+        config.sleep_threshold_cpu = -5.0;
         assert!(config.validate().is_err());
     }
 
     #[test]
-    fn test_config_validation_sleep_threshold_too_high() {
+    fn test_config_validation_cpu_threshold_too_high() {
         let mut config = Config::default();
-        config.sleep_threshold = 25.0;
+        config.sleep_threshold_cpu = 150.0;
         assert!(config.validate().is_err());
     }
 
