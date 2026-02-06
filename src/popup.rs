@@ -2,6 +2,7 @@
 //!
 //! Uses Wayland layer-shell protocol via iced's SCTK integration
 //! to create a proper dropdown-like popup that appears near the tray icon.
+//! Falls back to a regular window in Flatpak where layer-shell is unavailable.
 
 use crate::config::{AnimationSource, Config, PopupPosition};
 use crate::cpu::{CpuMonitor, CpuUsage};
@@ -26,7 +27,7 @@ use std::time::Duration;
 /// Messages for the popup application
 #[derive(Debug, Clone)]
 pub enum Message {
-    /// Layer surface created
+    /// Layer surface created (layer-shell mode only)
     LayerSurfaceCreated(Id),
     /// Close the popup
     Close,
@@ -40,7 +41,9 @@ pub enum Message {
 
 /// Popup application state
 struct PopupApp {
-    /// Layer surface ID
+    /// Whether running in windowed mode (Flatpak fallback)
+    windowed: bool,
+    /// Layer surface ID (None in windowed mode)
     surface_id: Option<Id>,
     /// CPU monitor for live updates
     cpu_monitor: CpuMonitor,
@@ -66,6 +69,7 @@ impl Default for PopupApp {
         let theme_colors = theme::get_cosmic_theme_colors();
 
         Self {
+            windowed: false,
             surface_id: None,
             cpu_monitor,
             cpu_usage: CpuUsage::default(),
@@ -79,25 +83,22 @@ impl Default for PopupApp {
 }
 
 impl PopupApp {
-    fn new() -> (Self, Task<Message>) {
+    /// Initialize for layer-shell mode (native)
+    fn new_layer_shell() -> (Self, Task<Message>) {
         let config = Config::load();
 
-        // Calculate size based on CPU count
         let cpu_count = num_cpus::get();
         let base_height = 180u32;
         let per_core_height = 22u32;
         let height = (base_height + (cpu_count as u32 * per_core_height)).min(700);
         let width = 380u32;
 
-        // Margin from edge (near the tray area)
         let edge_margin = 8;
-        // Panel height (typical COSMIC panel)
         let panel_margin = 40;
 
-        // Configure layer surface
         let mut settings = SctkLayerSurfaceSettings::default();
         settings.keyboard_interactivity = KeyboardInteractivity::OnDemand;
-        settings.layer = Layer::Overlay; // Above normal windows
+        settings.layer = Layer::Overlay;
         settings.size = Some((Some(width), Some(height)));
         settings.size_limits = Limits::NONE
             .min_width(width as f32)
@@ -105,7 +106,6 @@ impl PopupApp {
             .max_width(width as f32)
             .max_height(height as f32);
 
-        // Set anchor and margins based on configured popup position
         let (anchor, margin) = match config.popup_position {
             PopupPosition::TopLeft => (
                 Anchor::TOP | Anchor::LEFT,
@@ -147,16 +147,44 @@ impl PopupApp {
 
         settings.anchor = anchor;
         settings.margin = margin;
-
-        // Don't reserve exclusive space
         settings.exclusive_zone = -1;
 
         (Self::default(), get_layer_surface(settings).map(Message::LayerSurfaceCreated))
     }
 
-    fn title(&self, _id: Id) -> String {
+    /// Initialize for windowed mode (Flatpak fallback)
+    fn new_windowed() -> (Self, Task<Message>) {
+        let mut app = Self::default();
+        app.windowed = true;
+        (app, Task::none())
+    }
+
+    /// Shared title
+    fn popup_title(&self) -> String {
         String::from("RunKat CPU Monitor")
     }
+
+    // -- Daemon mode (layer-shell) function signatures --
+
+    fn title_daemon(&self, _id: Id) -> String {
+        self.popup_title()
+    }
+
+    fn view_daemon(&self, _id: Id) -> Element<'_, Message> {
+        self.popup_view()
+    }
+
+    // -- Application mode (windowed) function signatures --
+
+    fn title_windowed(&self) -> String {
+        self.popup_title()
+    }
+
+    fn view_windowed(&self) -> Element<'_, Message> {
+        self.popup_view()
+    }
+
+    // -- Shared logic --
 
     fn update(&mut self, message: Message) -> Task<Message> {
         match message {
@@ -182,14 +210,13 @@ impl PopupApp {
                 std::process::exit(0);
             }
             Message::Tick => {
-                // Auto-exit safety: if should_exit is set, exit on next tick
                 if self.should_exit {
                     std::process::exit(0);
                 }
 
-                // Auto-exit if surface was never created after 10 ticks (5 seconds)
                 self.tick_count += 1;
-                if self.tick_count > 10 && self.surface_id.is_none() {
+                // Only auto-exit for layer-shell mode where surface might fail to create
+                if !self.windowed && self.tick_count > 10 && self.surface_id.is_none() {
                     tracing::warn!("Popup surface never created, exiting");
                     std::process::exit(1);
                 }
@@ -201,7 +228,6 @@ impl PopupApp {
                 self.accent_color = theme_colors.foreground;
             }
             Message::Event(event) => {
-                // Close on focus lost or Escape key
                 match event {
                     Event::Window(window::Event::Unfocused) => {
                         self.should_exit = true;
@@ -228,21 +254,19 @@ impl PopupApp {
         Task::none()
     }
 
-    fn view(&self, _id: Id) -> Element<'_, Message> {
+    fn popup_view(&self) -> Element<'_, Message> {
         let config = Config::load();
 
-        // Title based on animation source
         let title_text = match config.animation_source {
             AnimationSource::CpuUsage => "CPU Usage",
             AnimationSource::Frequency => "CPU Frequency",
             AnimationSource::Temperature => "CPU Temperature",
         };
 
-        // Title row with close button
         let title_row = row![
             text(title_text).size(16),
             horizontal_space(),
-            button(text("×").size(18))
+            button(text("\u{00d7}").size(18))
                 .on_press(Message::Close)
                 .padding([2, 8])
                 .style(button::secondary),
@@ -250,10 +274,8 @@ impl PopupApp {
         .spacing(8)
         .align_y(Alignment::Center);
 
-        // Build content based on animation source
         let stats_content: Element<'_, Message> = match config.animation_source {
             AnimationSource::CpuUsage => {
-                // Overall CPU bar
                 let overall_pct = self.cpu_usage.aggregate;
                 let overall_row = row![
                     text("Total:").size(14).width(Length::Fixed(80.0)),
@@ -265,7 +287,6 @@ impl PopupApp {
                 .spacing(8)
                 .align_y(Alignment::Center);
 
-                // Per-core CPU bars
                 let mut core_column = column![].spacing(2);
                 for (i, &pct) in self.cpu_usage.per_core.iter().enumerate() {
                     let label = format!("CPU{}:", i);
@@ -285,7 +306,6 @@ impl PopupApp {
             }
 
             AnimationSource::Frequency => {
-                // Average frequency
                 let avg_mhz: u32 = if self.cpu_frequency.per_core.is_empty() {
                     0
                 } else {
@@ -304,7 +324,6 @@ impl PopupApp {
                 .spacing(8)
                 .align_y(Alignment::Center);
 
-                // Per-core frequencies
                 let mut core_column = column![].spacing(2);
                 for (i, &mhz) in self.cpu_frequency.per_core.iter().enumerate() {
                     let max = self.cpu_frequency.max_per_core.get(i).copied().unwrap_or(1);
@@ -328,11 +347,10 @@ impl PopupApp {
                 let max_temp = self.cpu_temperature.max_temp();
                 let critical = self.cpu_temperature.critical.unwrap_or(100.0);
 
-                // Max temperature
                 let max_row = row![
                     text("Max:").size(14).width(Length::Fixed(80.0)),
                     self.progress_bar(max_temp, critical, false),
-                    text(format!("{:.1}°C", max_temp))
+                    text(format!("{:.1}\u{00b0}C", max_temp))
                         .size(14)
                         .width(Length::Fixed(55.0)),
                 ]
@@ -341,12 +359,11 @@ impl PopupApp {
 
                 let mut temp_column = column![max_row].spacing(2);
 
-                // Package temperature
                 if let Some(pkg_temp) = self.cpu_temperature.package {
                     let pkg_row = row![
                         text("Package:").size(11).width(Length::Fixed(80.0)),
                         self.progress_bar(pkg_temp, critical, false),
-                        text(format!("{:.1}°C", pkg_temp))
+                        text(format!("{:.1}\u{00b0}C", pkg_temp))
                             .size(11)
                             .width(Length::Fixed(55.0)),
                     ]
@@ -355,13 +372,12 @@ impl PopupApp {
                     temp_column = temp_column.push(pkg_row);
                 }
 
-                // Per-core temps
                 for (i, &temp) in self.cpu_temperature.per_core.iter().enumerate() {
                     let label = format!("Core {}:", i);
                     let core_row = row![
                         text(label).size(11).width(Length::Fixed(80.0)),
                         self.progress_bar(temp, critical, false),
-                        text(format!("{:.1}°C", temp))
+                        text(format!("{:.1}\u{00b0}C", temp))
                             .size(11)
                             .width(Length::Fixed(55.0)),
                     ]
@@ -374,7 +390,6 @@ impl PopupApp {
             }
         };
 
-        // Status text (using per-source thresholds)
         let status_text = match config.animation_source {
             AnimationSource::CpuUsage => {
                 if self.cpu_usage.aggregate < config.sleep_threshold_cpu {
@@ -384,7 +399,6 @@ impl PopupApp {
                 }
             }
             AnimationSource::Frequency => {
-                // Compare average MHz against threshold in MHz
                 let avg_mhz = if self.cpu_frequency.per_core.is_empty() {
                     0.0
                 } else {
@@ -409,7 +423,6 @@ impl PopupApp {
             }
         };
 
-        // Bottom row with status and settings button
         let bottom_row = row![
             text(status_text).size(12),
             horizontal_space(),
@@ -421,7 +434,6 @@ impl PopupApp {
         .spacing(8)
         .align_y(Alignment::Center);
 
-        // Divider helper
         let divider = || {
             container(Space::new(Length::Fill, Length::Fixed(1.0)))
                 .style(|_: &Theme| container::Style {
@@ -430,11 +442,9 @@ impl PopupApp {
                 })
         };
 
-        // Scrollable stats area
         let scrollable_stats = scrollable(stats_content)
             .height(Length::Fill);
 
-        // Main content
         let content = column![
             title_row,
             divider(),
@@ -445,7 +455,6 @@ impl PopupApp {
         .spacing(8)
         .padding(12);
 
-        // Wrap in styled container
         container(content)
             .width(Length::Fill)
             .height(Length::Fill)
@@ -481,7 +490,6 @@ impl PopupApp {
         ])
     }
 
-    /// Create a progress bar
     fn progress_bar(&self, value: f32, max: f32, is_freq: bool) -> Element<'_, Message> {
         let bar_width = 140.0f32;
         let bar_height = 12.0f32;
@@ -489,26 +497,23 @@ impl PopupApp {
         let pct = pct.clamp(0.0, 1.0);
         let filled_width = (pct * bar_width).max(0.0).min(bar_width);
 
-        // Color based on value
         let bar_color = if is_freq {
-            // Blue for frequency
             Color::from_rgb8(
                 (50.0 + pct * 150.0) as u8,
                 (100.0 + pct * 100.0) as u8,
                 220,
             )
         } else if pct > 0.9 {
-            Color::from_rgb8(220, 50, 50) // Red
+            Color::from_rgb8(220, 50, 50)
         } else if pct > 0.7 {
-            Color::from_rgb8(220, 150, 50) // Orange
+            Color::from_rgb8(220, 150, 50)
         } else if pct > 0.5 {
-            Color::from_rgb8(200, 200, 50) // Yellow
+            Color::from_rgb8(200, 200, 50)
         } else {
             let (r, g, b) = self.accent_color;
             Color::from_rgb8(r, g, b)
         };
 
-        // Inner filled bar
         let inner = container(Space::new(Length::Fixed(filled_width), Length::Fixed(bar_height - 2.0)))
             .style(move |_: &Theme| container::Style {
                 background: Some(iced::Background::Color(bar_color)),
@@ -519,7 +524,6 @@ impl PopupApp {
                 ..Default::default()
             });
 
-        // Outer background bar
         container(inner)
             .width(Length::Fixed(bar_width))
             .height(Length::Fixed(bar_height))
@@ -537,7 +541,6 @@ impl PopupApp {
 
 /// Check if popup is already running by looking for the process
 pub fn is_popup_running() -> bool {
-    // Check /proc for processes with --popup argument
     let current_pid = std::process::id();
     let entries = match std::fs::read_dir("/proc") {
         Ok(entries) => entries,
@@ -551,24 +554,19 @@ pub fn is_popup_running() -> bool {
         let Ok(pid) = entry.file_name().to_string_lossy().parse::<u32>() else {
             continue;
         };
-        // Skip our own process
         if pid == current_pid {
             continue;
         }
-        // Read cmdline as bytes to properly handle null-separated arguments
         let cmdline_path = format!("/proc/{}/cmdline", pid);
         let Ok(cmdline_bytes) = std::fs::read(&cmdline_path) else {
             continue;
         };
-        // Split on null bytes to get individual arguments
         let args: Vec<&[u8]> = cmdline_bytes.split(|&b| b == 0).collect();
-        // First arg must be the cosmic-runkat binary (not a shell or flatpak wrapper)
         let Some(exe_arg) = args.first() else { continue };
         let exe_str = String::from_utf8_lossy(exe_arg);
         if !exe_str.ends_with("cosmic-runkat") {
             continue;
         }
-        // Check if --popup is a separate argument (not embedded in a shell command)
         let has_popup = args.iter().any(|arg| arg == b"--popup" || arg == b"-p");
         if has_popup {
             tracing::debug!("Found existing popup process: PID {} ({})", pid, exe_str);
@@ -578,15 +576,36 @@ pub fn is_popup_running() -> bool {
     false
 }
 
-/// Run the popup using layer-shell
+/// Run the popup - uses layer-shell natively, regular window in Flatpak
 pub fn run_popup() -> iced::Result {
-    // Check if popup is already running
     if is_popup_running() {
         eprintln!("Popup is already running");
         return Ok(());
     }
 
-    iced::daemon(PopupApp::title, PopupApp::update, PopupApp::view)
+    if crate::paths::is_flatpak() {
+        tracing::info!("Running popup in windowed mode (Flatpak)");
+        run_popup_windowed()
+    } else {
+        tracing::info!("Running popup in layer-shell mode (native)");
+        run_popup_layer_shell()
+    }
+}
+
+/// Layer-shell popup (native, positioned as overlay near tray)
+fn run_popup_layer_shell() -> iced::Result {
+    iced::daemon(PopupApp::title_daemon, PopupApp::update, PopupApp::view_daemon)
         .subscription(PopupApp::subscription)
-        .run_with(PopupApp::new)
+        .run_with(PopupApp::new_layer_shell)
+}
+
+/// Regular window popup (Flatpak fallback)
+fn run_popup_windowed() -> iced::Result {
+    let cpu_count = num_cpus::get();
+    let height = (180 + cpu_count as u32 * 22).min(700);
+
+    iced::application(PopupApp::title_windowed, PopupApp::update, PopupApp::view_windowed)
+        .subscription(PopupApp::subscription)
+        .window_size(iced::Size::new(380.0, height as f32))
+        .run_with(PopupApp::new_windowed)
 }
