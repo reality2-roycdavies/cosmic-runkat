@@ -59,12 +59,16 @@
 
   <screenshots>
     <screenshot type="default">
-      <caption>RunKat Settings - Configure CPU threshold and display options</caption>
-      <image type="source">https://raw.githubusercontent.com/reality2-roycdavies/cosmic-runkat/main/screenshots/settings.png</image>
+      <caption>CPU Usage mode — per-core usage popup and settings</caption>
+      <image type="source">https://raw.githubusercontent.com/reality2-roycdavies/cosmic-runkat/main/screenshots/Screenshot_2026-02-06_20-48-50.png</image>
     </screenshot>
     <screenshot>
-      <caption>RunKat panel applet showing CPU percentage</caption>
-      <image type="source">https://raw.githubusercontent.com/reality2-roycdavies/cosmic-runkat/main/screenshots/panel.png</image>
+      <caption>CPU Frequency mode — per-core frequency popup and settings</caption>
+      <image type="source">https://raw.githubusercontent.com/reality2-roycdavies/cosmic-runkat/main/screenshots/Screenshot_2026-02-06_20-49-14.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>CPU Temperature mode — temperature popup and settings</caption>
+      <image type="source">https://raw.githubusercontent.com/reality2-roycdavies/cosmic-runkat/main/screenshots/Screenshot_2026-02-06_20-49-27.png</image>
     </screenshot>
   </screenshots>
 
