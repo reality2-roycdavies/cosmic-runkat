@@ -6,6 +6,12 @@ A cute running cat CPU indicator for the [COSMIC desktop environment](https://sy
 ![Rust](https://img.shields.io/badge/rust-2021-orange.svg)
 ![COSMIC](https://img.shields.io/badge/desktop-COSMIC-purple.svg)
 
+## Screenshots
+
+| CPU Usage | CPU Frequency | CPU Temperature |
+|:---------:|:-------------:|:---------------:|
+| ![CPU Usage](screenshots/Screenshot_2026-02-06_20-48-50.png) | ![CPU Frequency](screenshots/Screenshot_2026-02-06_20-49-14.png) | ![CPU Temperature](screenshots/Screenshot_2026-02-06_20-49-27.png) |
+
 ## Features
 
 - **Native COSMIC Panel Applet**: Integrates directly into the COSMIC panel
