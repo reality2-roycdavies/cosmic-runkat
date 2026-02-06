@@ -5,6 +5,58 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.0] - 2026-02-06
+
+### Removed
+- Dead code from v1.x: `PopupPosition` enum, `sleep_threshold` legacy field, unused aggregate CPU channel, `animation_metric` field
+- Unused `num_cpus` dependency
+- `paths.rs` module (Flatpak detection no longer needed)
+- Legacy config migration code
+
+### Changed
+- All `eprintln!` replaced with structured `tracing` logging
+- Refactored to idiomatic Rust: combinator chains, destructuring, `map_err().ok()?` patterns
+- Extracted `CpuFrequency::average_mhz()` helper, eliminating 4 inline duplicates
+- Extracted `read_khz_as_mhz()` and `read_millidegrees()` helpers in sysinfo
+- Consolidated duplicated config dir computation in theme.rs
+- Replaced magic numbers with named constants (`POPUP_WIDTH`, `BAR_HEIGHT`, `TEMP_HOT_THRESHOLD`, etc.)
+- Simplified README to Flathub-only installation
+
+### Fixed
+- Unsafe `unwrap()` on `main_window_id()` replaced with proper guard
+- Stale "tray" references updated to "panel" in metainfo and keywords
+- Placeholder tests replaced with real assertions
+
+### Documentation
+- Comprehensive doc comments added across all modules
+- Explains design decisions: blocking I/O thread, watch channels, sprite recoloring, TEA pattern
+- Updated screenshots showing all three monitoring modes
+
+---
+
+## [2.0.0] - 2026-02-06
+
+### Added
+- Native COSMIC panel applet replacing system tray integration
+- Native popup dropdown with per-core CPU stats
+- Per-core CPU frequency and temperature display in popup
+- Scrollable popup supporting up to 25 rows for many-core CPUs
+- Progress bars for frequency and temperature metrics
+
+### Changed
+- Complete architecture rewrite from system tray to native COSMIC applet
+- Single-process architecture (eliminated D-Bus/SNI dependency)
+- Proper panel icon sizing and theme integration
+- Simplified codebase: ~1400 fewer lines of code
+
+### Removed
+- System tray (ksni) integration
+- D-Bus dependency
+- Multi-process architecture (separate tray + settings processes)
+- Layer-shell popup (replaced by native COSMIC popup)
+
+---
+
 ## [1.0.0-alpha.2] - 2026-01-29
 
 ### Added
