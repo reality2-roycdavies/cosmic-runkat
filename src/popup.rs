@@ -555,13 +555,24 @@ pub fn is_popup_running() -> bool {
         if pid == current_pid {
             continue;
         }
-        // Check cmdline for --popup
+        // Read cmdline as bytes to properly handle null-separated arguments
         let cmdline_path = format!("/proc/{}/cmdline", pid);
-        if let Ok(cmdline) = std::fs::read_to_string(&cmdline_path) {
-            if cmdline.contains("cosmic-runkat") && cmdline.contains("--popup") {
-                tracing::debug!("Found existing popup process: PID {}", pid);
-                return true;
-            }
+        let Ok(cmdline_bytes) = std::fs::read(&cmdline_path) else {
+            continue;
+        };
+        // Split on null bytes to get individual arguments
+        let args: Vec<&[u8]> = cmdline_bytes.split(|&b| b == 0).collect();
+        // First arg must be the cosmic-runkat binary (not a shell or flatpak wrapper)
+        let Some(exe_arg) = args.first() else { continue };
+        let exe_str = String::from_utf8_lossy(exe_arg);
+        if !exe_str.ends_with("cosmic-runkat") {
+            continue;
+        }
+        // Check if --popup is a separate argument (not embedded in a shell command)
+        let has_popup = args.iter().any(|arg| arg == b"--popup" || arg == b"-p");
+        if has_popup {
+            tracing::debug!("Found existing popup process: PID {} ({})", pid, exe_str);
+            return true;
         }
     }
     false
