@@ -607,5 +607,6 @@ fn run_popup_windowed() -> iced::Result {
     iced::application(PopupApp::title_windowed, PopupApp::update, PopupApp::view_windowed)
         .subscription(PopupApp::subscription)
         .window_size(iced::Size::new(380.0, height as f32))
+        .resizable(false)
         .run_with(PopupApp::new_windowed)
 }
