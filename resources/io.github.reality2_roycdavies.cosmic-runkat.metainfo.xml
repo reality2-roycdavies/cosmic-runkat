@@ -15,18 +15,18 @@
       not function on other desktop environments.
     </p>
     <p>
-      RunKat displays an animated cat in your system tray that runs faster when
-      CPU usage is higher. When CPU usage drops below a configurable threshold,
-      the cat curls up and sleeps.
+      RunKat is a native COSMIC panel applet that displays an animated cat that
+      runs faster when CPU usage is higher. When CPU usage drops below a
+      configurable threshold, the cat curls up and sleeps.
     </p>
     <p>Features:</p>
     <ul>
       <li>Animated running cat driven by CPU usage, frequency, or temperature</li>
       <li>Optional CPU percentage display beside the cat</li>
       <li>Sleep mode with per-source configurable thresholds</li>
-      <li>Per-core CPU stats popup with configurable screen position</li>
+      <li>Per-core CPU stats popup with scrollable display</li>
       <li>Automatic dark/light theme adaptation</li>
-      <li>Panel size awareness (percentage hidden on small panels)</li>
+      <li>Native COSMIC panel integration with proper sizing</li>
     </ul>
     <p>
       Inspired by RunCat, this application was built specifically for the
@@ -63,7 +63,7 @@
       <image type="source">https://raw.githubusercontent.com/reality2-roycdavies/cosmic-runkat/main/screenshots/settings.png</image>
     </screenshot>
     <screenshot>
-      <caption>RunKat in system tray showing CPU percentage</caption>
+      <caption>RunKat in COSMIC panel showing CPU percentage</caption>
       <image type="source">https://raw.githubusercontent.com/reality2-roycdavies/cosmic-runkat/main/screenshots/tray.png</image>
     </screenshot>
   </screenshots>
@@ -71,6 +71,19 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="2.0.0" date="2026-02-06">
+      <description>
+        <p>Native COSMIC panel applet! Complete architecture rewrite.</p>
+        <ul>
+          <li>Native COSMIC panel applet replacing system tray integration</li>
+          <li>Native popup dropdown with per-core CPU stats</li>
+          <li>Eliminated D-Bus/SNI dependency and multi-process architecture</li>
+          <li>Proper panel icon sizing and theme integration</li>
+          <li>Scrollable popup supporting up to 25 rows for many-core CPUs</li>
+          <li>Simplified codebase: ~1400 fewer lines of code</li>
+        </ul>
+      </description>
+    </release>
     <release version="1.1.0" date="2026-02-06">
       <description>
         <p>Multi-metric monitoring: CPU frequency and temperature support!</p>
