@@ -7,18 +7,12 @@ sdk-extensions:
 command: cosmic-runkat
 
 finish-args:
-  # Wayland display access (COSMIC panel applet)
   - --socket=wayland
-  # GPU access for libcosmic/wgpu rendering
   - --device=dri
-  # Portal access
-  - --talk-name=org.freedesktop.portal.*
-  # Host filesystem read-only for /proc/stat CPU monitoring
-  - --filesystem=host:ro
-  # COSMIC desktop theme and panel configuration
-  - --filesystem=~/.config/cosmic:ro
-  # App config storage
-  - --filesystem=~/.config/cosmic-runkat:create
+  - --filesystem=xdg-config/cosmic:ro
+  - --filesystem=xdg-config/cosmic-runkat:create
+  - --filesystem=/sys/devices/system/cpu:ro
+  - --filesystem=/sys/class/hwmon:ro
 
 modules:
   - name: cosmic-runkat
