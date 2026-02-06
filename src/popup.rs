@@ -612,6 +612,7 @@ fn run_popup_windowed() -> iced::Result {
         max_size: Some(size),
         resizable: false,
         decorations: false,
+        level: iced::window::Level::AlwaysOnTop,
         ..Default::default()
     };
 
