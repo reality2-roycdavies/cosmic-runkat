@@ -33,5 +33,5 @@ modules:
       - type: git
         url: https://github.com/reality2-roycdavies/cosmic-runkat.git
         tag: v2.1.0
-        commit: 970bb848cd1c87270c873f7c864be176c82e2cf8
+        commit: 368d4d58c6520b4fb32b9f61f2a1e81328abf8f8
       - cargo-sources.json
