@@ -611,6 +611,7 @@ fn run_popup_windowed() -> iced::Result {
         min_size: Some(size),
         max_size: Some(size),
         resizable: false,
+        decorations: false,
         ..Default::default()
     };
 
