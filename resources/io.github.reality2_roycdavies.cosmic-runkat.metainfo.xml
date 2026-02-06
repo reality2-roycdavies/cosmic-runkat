@@ -63,14 +63,28 @@
       <image type="source">https://raw.githubusercontent.com/reality2-roycdavies/cosmic-runkat/main/screenshots/settings.png</image>
     </screenshot>
     <screenshot>
-      <caption>RunKat in COSMIC panel showing CPU percentage</caption>
-      <image type="source">https://raw.githubusercontent.com/reality2-roycdavies/cosmic-runkat/main/screenshots/tray.png</image>
+      <caption>RunKat panel applet showing CPU percentage</caption>
+      <image type="source">https://raw.githubusercontent.com/reality2-roycdavies/cosmic-runkat/main/screenshots/panel.png</image>
     </screenshot>
   </screenshots>
 
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="2.1.0" date="2026-02-06">
+      <description>
+        <p>Code quality and documentation improvements — no functional changes.</p>
+        <ul>
+          <li>Removed dead code from v1.x (PopupPosition, legacy fields, unused channels)</li>
+          <li>Replaced all eprintln! with structured tracing logging</li>
+          <li>Extracted helpers to eliminate duplicated logic</li>
+          <li>Replaced magic numbers with named constants</li>
+          <li>Added comprehensive comments throughout all source files</li>
+          <li>Expanded test coverage with real assertions</li>
+          <li>Made code more idiomatic Rust (combinators, destructuring)</li>
+        </ul>
+      </description>
+    </release>
     <release version="2.0.0" date="2026-02-06">
       <description>
         <p>Native COSMIC panel applet! Complete architecture rewrite.</p>
@@ -237,7 +251,8 @@
     <keyword>cpu</keyword>
     <keyword>monitor</keyword>
     <keyword>system</keyword>
-    <keyword>tray</keyword>
+    <keyword>panel</keyword>
+    <keyword>applet</keyword>
     <keyword>cat</keyword>
     <keyword>animation</keyword>
     <keyword>cosmic</keyword>
