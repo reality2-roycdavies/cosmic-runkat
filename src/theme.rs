@@ -31,13 +31,31 @@ pub fn get_cosmic_theme_colors() -> ThemeColors {
     }
 }
 
-/// Fallback: manually parse theme from files
-fn try_manual_theme_parsing() -> Result<ThemeColors, Box<dyn std::error::Error>> {
-    // Get theme mode (dark or light)
-    let is_dark = is_dark_mode_manual()?;
+/// Path to the COSMIC theme config directory (~/.config/cosmic)
+fn cosmic_config_dir() -> Result<std::path::PathBuf, Box<dyn std::error::Error>> {
+    Ok(dirs::home_dir()
+        .ok_or("Cannot determine home directory")?
+        .join(".config/cosmic"))
+}
 
-    // Get foreground color
-    let foreground = get_theme_color_manual(is_dark)?;
+/// Parse theme colors from COSMIC config files on disk
+fn try_manual_theme_parsing() -> Result<ThemeColors, Box<dyn std::error::Error>> {
+    let config_dir = cosmic_config_dir()?;
+
+    // Check if dark mode is enabled
+    let theme_path = config_dir.join("com.system76.CosmicTheme.Mode/v1/is_dark");
+    let is_dark = std::fs::read_to_string(theme_path)
+        .map(|s| s.trim() == "true")
+        .unwrap_or(true);
+
+    // Read the foreground color from the appropriate theme (Dark or Light)
+    let mode = if is_dark { "Dark" } else { "Light" };
+    let background_path = config_dir
+        .join(format!("com.system76.CosmicTheme.{}/v1", mode))
+        .join("background");
+    let content = std::fs::read_to_string(background_path)?;
+    let foreground = parse_color_from_ron(&content, "on")
+        .ok_or("Failed to parse foreground color from theme")?;
 
     tracing::debug!(
         "Loaded COSMIC theme: RGB({}, {}, {}), dark={}",
@@ -48,30 +66,6 @@ fn try_manual_theme_parsing() -> Result<ThemeColors, Box<dyn std::error::Error>>
     );
 
     Ok(ThemeColors { foreground, is_dark })
-}
-
-/// Check if dark mode is enabled (manual method)
-fn is_dark_mode_manual() -> Result<bool, Box<dyn std::error::Error>> {
-    let config_dir =
-        dirs::home_dir().ok_or("Cannot determine home directory")?.join(".config/cosmic");
-
-    let theme_path = config_dir.join("com.system76.CosmicTheme.Mode/v1/is_dark");
-
-    let content = std::fs::read_to_string(theme_path)?;
-    Ok(content.trim() == "true")
-}
-
-/// Get theme foreground color (manual method)
-fn get_theme_color_manual(is_dark: bool) -> Result<(u8, u8, u8), Box<dyn std::error::Error>> {
-    let config_dir =
-        dirs::home_dir().ok_or("Cannot determine home directory")?.join(".config/cosmic");
-
-    let mode = if is_dark { "Dark" } else { "Light" };
-    let theme_dir = config_dir.join(format!("com.system76.CosmicTheme.{}/v1", mode));
-    let background_path = theme_dir.join("background");
-
-    let content = std::fs::read_to_string(background_path)?;
-    parse_color_from_ron(&content, "on").ok_or("Failed to parse color".into())
 }
 
 /// Parse a color from COSMIC theme RON format

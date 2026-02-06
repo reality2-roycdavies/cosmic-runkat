@@ -1,25 +1,29 @@
-//! cosmic-runkat - A cute running cat CPU indicator for COSMIC desktop
+//! cosmic-runkat — A cute running cat CPU indicator for COSMIC desktop
 //!
-//! Inspired by RunCat, this application displays an animated cat in the
-//! COSMIC panel that runs faster when CPU usage is higher.
+//! Inspired by [RunCat](https://kyome.io/runcat/), this application displays
+//! an animated cat in the COSMIC panel that runs faster when the CPU is busy.
 //!
-//! ## Modes
+//! ## How to run
 //!
-//! - No arguments: Run as a COSMIC panel applet
-//! - `--settings` or `-s`: Open the settings window
+//! - **No arguments**: Starts as a COSMIC panel applet (normal usage)
+//! - **`--settings`** or **`-s`**: Opens the standalone settings window
+//! - **`--help`**: Shows usage information
+//! - **`--version`**: Shows the version number
 
+// Each `mod` declaration tells Rust to include the corresponding source file.
+// For example, `mod applet` includes `src/applet.rs`.
 mod applet;
 mod config;
 mod constants;
 mod cpu;
 mod error;
-mod paths;
 mod settings;
 mod sysinfo;
 mod theme;
 
 use std::env;
 
+/// Print command-line usage information
 fn print_help() {
     println!(
         r#"cosmic-runkat - A cute running cat CPU indicator for COSMIC desktop
@@ -36,21 +40,25 @@ No arguments: Run as a COSMIC panel applet.
     );
 }
 
+/// Print the version from Cargo.toml (embedded at compile time)
 fn print_version() {
     println!("cosmic-runkat {}", env!("CARGO_PKG_VERSION"));
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Initialize structured logging
+    // Set up structured logging using the `tracing` crate.
+    // Log level can be overridden with the RUST_LOG environment variable,
+    // e.g. RUST_LOG=debug cosmic-runkat
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::from_default_env()
-                .add_directive("cosmic_runkat=info".parse().unwrap()),
+                .add_directive("cosmic_runkat=info".parse().expect("valid log directive")),
         )
         .init();
 
     tracing::info!("Starting cosmic-runkat v{}", env!("CARGO_PKG_VERSION"));
 
+    // Parse command-line arguments
     let args: Vec<String> = env::args().collect();
 
     if args.len() > 1 {
@@ -68,13 +76,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 settings::run_settings().map_err(|e| e.into())
             }
             arg => {
-                eprintln!("Unknown argument: {}", arg);
-                print_help();
-                std::process::exit(1);
+                Err(format!("Unknown argument: {}", arg).into())
             }
         }
     } else {
-        // Default: run as COSMIC panel applet
+        // Default (no arguments): run as a COSMIC panel applet
         tracing::info!("Starting COSMIC panel applet");
         applet::run_applet().map_err(|e| e.into())
     }
