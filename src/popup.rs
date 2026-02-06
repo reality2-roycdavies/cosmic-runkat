@@ -523,21 +523,29 @@ impl PopupApp {
 /// Check if popup is already running by looking for the process
 pub fn is_popup_running() -> bool {
     // Check /proc for processes with --popup argument
-    if let Ok(entries) = std::fs::read_dir("/proc") {
-        let current_pid = std::process::id();
-        for entry in entries.flatten() {
-            if let Ok(pid) = entry.file_name().to_string_lossy().parse::<u32>() {
-                // Skip our own process
-                if pid == current_pid {
-                    continue;
-                }
-                // Check cmdline for --popup
-                let cmdline_path = format!("/proc/{}/cmdline", pid);
-                if let Ok(cmdline) = std::fs::read_to_string(&cmdline_path) {
-                    if cmdline.contains("cosmic-runkat") && cmdline.contains("--popup") {
-                        return true;
-                    }
-                }
+    let current_pid = std::process::id();
+    let entries = match std::fs::read_dir("/proc") {
+        Ok(entries) => entries,
+        Err(e) => {
+            tracing::debug!("Cannot read /proc: {}, assuming popup not running", e);
+            return false;
+        }
+    };
+
+    for entry in entries.flatten() {
+        let Ok(pid) = entry.file_name().to_string_lossy().parse::<u32>() else {
+            continue;
+        };
+        // Skip our own process
+        if pid == current_pid {
+            continue;
+        }
+        // Check cmdline for --popup
+        let cmdline_path = format!("/proc/{}/cmdline", pid);
+        if let Ok(cmdline) = std::fs::read_to_string(&cmdline_path) {
+            if cmdline.contains("cosmic-runkat") && cmdline.contains("--popup") {
+                tracing::debug!("Found existing popup process: PID {}", pid);
+                return true;
             }
         }
     }

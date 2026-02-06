@@ -458,18 +458,16 @@ impl Tray for RunkatTray {
 
     fn activate(&mut self, _x: i32, _y: i32) {
         // Left-click: Open popup window with CPU details
-        // Note: x,y are always 0,0 on Wayland (no global coordinates available)
+        tracing::info!("Tray activated (left-click)");
 
-        // Check if popup is already running by checking processes
+        // Check if popup is already running
         if crate::popup::is_popup_running() {
+            tracing::debug!("Popup already running, skipping");
             return;
         }
 
         // Spawn popup
-        std::thread::spawn(|| {
-            let exe = std::env::current_exe().unwrap_or_default();
-            let _ = Command::new(exe).arg("--popup").spawn();
-        });
+        spawn_popup();
     }
 
     fn icon_theme_path(&self) -> String {
@@ -537,10 +535,7 @@ impl Tray for RunkatTray {
             StandardItem {
                 label: "View Details...".to_string(),
                 activate: Box::new(|_| {
-                    std::thread::spawn(|| {
-                        let exe = std::env::current_exe().unwrap_or_default();
-                        let _ = Command::new(exe).arg("--popup").spawn();
-                    });
+                    spawn_popup();
                 }),
                 ..Default::default()
             }
@@ -569,6 +564,31 @@ impl Tray for RunkatTray {
             .into(),
         ]
     }
+}
+
+/// Spawn the popup window process
+///
+/// Works in both native and Flatpak environments.
+fn spawn_popup() {
+    std::thread::spawn(|| {
+        let exe = match std::env::current_exe() {
+            Ok(path) => path,
+            Err(e) => {
+                tracing::error!("Failed to get current exe path: {}", e);
+                // Fallback for Flatpak
+                if std::path::Path::new("/.flatpak-info").exists() {
+                    std::path::PathBuf::from("/app/bin/cosmic-runkat")
+                } else {
+                    return;
+                }
+            }
+        };
+        tracing::info!("Spawning popup: {:?} --popup", exe);
+        match Command::new(&exe).arg("--popup").spawn() {
+            Ok(_) => tracing::info!("Popup process spawned successfully"),
+            Err(e) => tracing::error!("Failed to spawn popup: {}", e),
+        }
+    });
 }
 
 /// Starts the system tray service with animated icon
