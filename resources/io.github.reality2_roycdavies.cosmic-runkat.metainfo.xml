@@ -21,12 +21,12 @@
     </p>
     <p>Features:</p>
     <ul>
-      <li>Animated running cat that reflects CPU usage</li>
+      <li>Animated running cat driven by CPU usage, frequency, or temperature</li>
       <li>Optional CPU percentage display beside the cat</li>
-      <li>Sleep mode when CPU is idle</li>
+      <li>Sleep mode with per-source configurable thresholds</li>
+      <li>Per-core CPU stats popup with configurable screen position</li>
       <li>Automatic dark/light theme adaptation</li>
       <li>Panel size awareness (percentage hidden on small panels)</li>
-      <li>Configurable sleep threshold</li>
     </ul>
     <p>
       Inspired by RunCat, this application was built specifically for the
@@ -71,6 +71,18 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="1.1.0" date="2026-02-06">
+      <description>
+        <p>Multi-metric monitoring: CPU frequency and temperature support!</p>
+        <ul>
+          <li>Animation source selector: CPU Usage, CPU Frequency, or CPU Temperature</li>
+          <li>Per-source sleep thresholds with appropriate units (%, MHz, C)</li>
+          <li>Per-core CPU stats popup with configurable screen position</li>
+          <li>Layer-shell popup with real-time updating stats</li>
+          <li>Scrollable popup for many-core CPUs</li>
+        </ul>
+      </description>
+    </release>
     <release version="1.0.0" date="2026-01-29">
       <description>
         <p>Major release: Production-ready transformation with 85-95% CPU usage reduction!</p>
