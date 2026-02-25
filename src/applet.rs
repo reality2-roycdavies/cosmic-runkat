@@ -465,8 +465,14 @@ impl cosmic::Application for RunkatApplet {
             // can briefly block while setting up the child process.
             Message::OpenSettings => {
                 std::thread::spawn(|| {
-                    let exe = std::env::current_exe().unwrap_or_default();
-                    let _ = std::process::Command::new(exe).arg("--settings").spawn();
+                    // Try the unified settings app first, fall back to standalone
+                    let result = std::process::Command::new("cosmic-applet-settings")
+                        .arg("runkat")
+                        .spawn();
+                    if result.is_err() {
+                        let exe = std::env::current_exe().unwrap_or_default();
+                        let _ = std::process::Command::new(exe).arg("--settings").spawn();
+                    }
                 });
             }
         }
