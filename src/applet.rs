@@ -465,7 +465,10 @@ impl cosmic::Application for RunkatApplet {
             // can briefly block while setting up the child process.
             Message::OpenSettings => {
                 std::thread::spawn(|| {
-                    // Try the unified settings app first, fall back to standalone
+                    // Don't spawn a second instance if already running
+                    if let Ok(output) = std::process::Command::new("pgrep").arg("-f").arg("cosmic-applet-settings").output() {
+                        if output.status.success() { return; }
+                    }
                     let result = std::process::Command::new("cosmic-applet-settings")
                         .arg("runkat")
                         .spawn();
