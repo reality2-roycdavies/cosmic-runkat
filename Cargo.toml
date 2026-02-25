@@ -7,6 +7,14 @@ license = "MIT"
 description = "A cute running cat CPU indicator for COSMIC desktop"
 repository = "https://github.com/reality2-roycdavies/cosmic-runkat"
 
+[lib]
+name = "cosmic_runkat"
+path = "src/lib.rs"
+
+[[bin]]
+name = "cosmic-runkat"
+path = "src/main.rs"
+
 [dependencies]
 # COSMIC GUI toolkit (native panel applet)
 libcosmic = { git = "https://github.com/pop-os/libcosmic.git", default-features = false, features = [

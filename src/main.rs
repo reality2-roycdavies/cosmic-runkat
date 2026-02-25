@@ -18,6 +18,7 @@ mod constants;
 mod cpu;
 mod error;
 mod settings;
+mod settings_page;
 mod sysinfo;
 mod theme;
 
