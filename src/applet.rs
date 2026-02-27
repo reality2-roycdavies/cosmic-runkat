@@ -465,16 +465,19 @@ impl cosmic::Application for RunkatApplet {
             // can briefly block while setting up the child process.
             Message::OpenSettings => {
                 std::thread::spawn(|| {
-                    // Don't spawn a second instance if already running
-                    if let Ok(output) = std::process::Command::new("pgrep").arg("-f").arg("cosmic-applet-settings").output() {
-                        if output.status.success() { return; }
-                    }
-                    let result = std::process::Command::new("cosmic-applet-settings")
-                        .arg("runkat")
+                    // Try unified settings hub first, fall back to standalone
+                    let unified = std::process::Command::new("cosmic-applet-settings")
+                        .arg(APP_ID)
                         .spawn();
-                    if result.is_err() {
-                        let exe = std::env::current_exe().unwrap_or_default();
-                        let _ = std::process::Command::new(exe).arg("--settings").spawn();
+                    if unified.is_err() {
+                        let exe = std::env::current_exe()
+                            .unwrap_or_else(|_| "cosmic-runkat".into());
+                        if let Err(e) = std::process::Command::new(exe)
+                            .arg("--settings-standalone")
+                            .spawn()
+                        {
+                            eprintln!("Failed to launch settings: {e}");
+                        }
                     }
                 });
             }
@@ -793,7 +796,7 @@ impl RunkatApplet {
         let bottom_row = row![
             text::caption(status_text),
             horizontal_space(),
-            widget::button::standard("Settings").on_press(Message::OpenSettings),
+            widget::button::standard("Settings...").on_press(Message::OpenSettings),
         ]
         .spacing(8)
         .align_y(Alignment::Center);
