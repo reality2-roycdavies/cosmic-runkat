@@ -6,6 +6,9 @@ authors = ["Roy C. Davies"]
 license = "MIT"
 description = "A cute running cat CPU indicator for COSMIC desktop"
 repository = "https://github.com/reality2-roycdavies/cosmic-runkat"
+homepage = "https://github.com/reality2-roycdavies/cosmic-runkat"
+keywords = ["cosmic-desktop", "runcat", "cpu-monitor", "cosmic-applet", "linux"]
+categories = ["gui"]
 
 [lib]
 name = "cosmic_runkat"
