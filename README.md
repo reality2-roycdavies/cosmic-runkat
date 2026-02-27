@@ -29,28 +29,7 @@ A cute running cat CPU indicator for the [COSMIC desktop environment](https://sy
 
 ## Installation
 
-### From Flathub
-
-```bash
-flatpak install flathub io.github.reality2_roycdavies.cosmic-runkat
-```
-
-### From Source (Flatpak)
-
-Requires `flatpak-builder` and the Freedesktop SDK with Rust extension.
-
-```bash
-# Install the SDK and Rust extension (if not already installed)
-flatpak install flathub org.freedesktop.Platform//25.08 org.freedesktop.Sdk//25.08
-flatpak install flathub org.freedesktop.Sdk.Extension.rust-stable//25.08
-
-# Clone and build
-git clone https://github.com/reality2-roycdavies/cosmic-runkat.git
-cd cosmic-runkat
-flatpak-builder --user --install --force-clean build-dir flathub/io.github.reality2_roycdavies.cosmic-runkat.yml
-```
-
-### From Source (Native)
+### From Source
 
 #### Prerequisites
 
@@ -103,12 +82,6 @@ After installing, add the applet to your COSMIC panel:
 
 ### Uninstalling
 
-**Flatpak:**
-```bash
-flatpak uninstall io.github.reality2_roycdavies.cosmic-runkat
-```
-
-**Native:**
 ```bash
 rm ~/.local/bin/cosmic-runkat
 rm ~/.local/share/applications/io.github.reality2_roycdavies.cosmic-runkat.desktop
@@ -169,8 +142,7 @@ cosmic-runkat (v2.1.0)
 │   ├── constants.rs   # Application-wide constants
 │   └── error.rs       # Error types
 ├── resources/         # PNG sprites, icons, desktop entry, metainfo
-├── docs/              # Development documentation
-└── flathub/           # Flatpak packaging
+└── docs/              # Development documentation
 ```
 
 ## About This Project
