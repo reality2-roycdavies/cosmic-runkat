@@ -10,7 +10,7 @@ This document captures learnings and solutions discovered while developing cosmi
 4. [COSMIC Integration](#cosmic-integration)
 5. [libcosmic Settings App](#libcosmic-settings-app)
 6. [Problem-Solving Journey](#problem-solving-journey)
-7. [Preparing for Flatpak Distribution](#preparing-for-flatpak-distribution)
+7. [The v1.0.0 Refactoring Journey](#the-v100-refactoring-journey)
 8. [Resources](#resources)
 
 ---
@@ -386,154 +386,6 @@ pub fn run_tray() -> Result<(), String> {
 ## Contributing
 
 When adding new features or fixing bugs, please update this document with any learnings that might help future developers.
-
----
-
-## Flathub Submission
-
-This section documents the process of submitting cosmic-runkat to Flathub for distribution via COSMIC Store.
-
-### Prerequisites
-
-1. **flatpak-builder**: Install with `sudo pacman -S flatpak-builder` (Arch) or equivalent
-2. **Flatpak SDKs**: 
-   ```bash
-   flatpak install flathub org.freedesktop.Platform//25.08 org.freedesktop.Sdk//25.08
-   flatpak install flathub org.freedesktop.Sdk.Extension.rust-stable//25.08
-   ```
-3. **flatpak-builder-tools**: For generating cargo-sources.json
-   ```bash
-   git clone https://github.com/flatpak/flatpak-builder-tools.git
-   cd flatpak-builder-tools/cargo
-   python3 -m venv venv && source venv/bin/activate
-   pip install tomlkit aiohttp PyYAML
-   ```
-
-### Generating cargo-sources.json
-
-Flatpak requires offline builds, so all Cargo dependencies must be pre-fetched:
-
-```bash
-python3 flatpak-cargo-generator.py /path/to/Cargo.lock -o cargo-sources.json
-```
-
-This generates a JSON file with all git and crate sources needed for the build.
-
-### App ID Requirements
-
-Flathub requires specific app ID formats for code hosting platforms:
-
-- **GitHub**: `io.github.USERNAME.REPONAME` (4 components)
-- **GitLab**: `io.gitlab.USERNAME.REPONAME`
-
-Our app ID: `io.github.reality2_roycdavies.cosmic-runkat`
-
-### Manifest Structure
-
-Key elements of the Flatpak manifest:
-
-```yaml
-app-id: io.github.reality2-roycdavies.cosmic-runkat
-runtime: org.freedesktop.Platform
-runtime-version: '25.08'
-sdk: org.freedesktop.Sdk
-sdk-extensions:
-  - org.freedesktop.Sdk.Extension.rust-stable
-
-finish-args:
-  - --share=ipc
-  - --socket=fallback-x11
-  - --socket=wayland
-  - --talk-name=org.kde.StatusNotifierWatcher
-  - --talk-name=org.freedesktop.StatusNotifierWatcher
-  - --filesystem=host:ro  # Required for /proc/stat access
-  - --filesystem=~/.config/cosmic:ro
-  - --filesystem=~/.config/cosmic-runkat:create
-```
-
-### Linter Issues and Exceptions
-
-Run the linter with:
-```bash
-flatpak run --command=flatpak-builder-lint org.flatpak.Builder manifest manifest.yml
-```
-
-**Common issues:**
-
-1. **appid-code-hosting-too-few-components**: App ID needs 4 components for GitHub
-2. **finish-args-arbitrary-dbus-access**: Don't use `--socket=session-bus`, use specific `--talk-name` instead
-3. **finish-args-host-ro-filesystem-access**: System monitoring apps need `--filesystem=host:ro` for `/proc` access - request exception in PR
-
-### Submission Process
-
-1. Fork https://github.com/flathub/flathub
-2. Clone with `new-pr` branch: `git clone -b new-pr YOUR_FORK`
-3. Create feature branch: `git checkout -b add-your-app`
-4. Add manifest and cargo-sources.json
-5. Push and create PR against `new-pr` base branch
-6. Include exception requests and educational context in PR description
-
-### Testing Locally
-
-```bash
-# Build and install
-flatpak-builder --user --install --force-clean build-dir manifest.yml
-
-# Run
-flatpak run io.github.reality2-roycdavies.cosmic-runkat
-
-# Uninstall
-flatpak uninstall io.github.reality2-roycdavies.cosmic-runkat
-```
-
-### AI-Assisted Development Disclosure
-
-When submitting AI-assisted projects to Flathub, be transparent:
-
-- Clearly disclose AI involvement in PR description
-- Emphasize human direction and decision-making
-- Link to documentation showing the collaborative process
-- Distinguish from fully automated/unsupervised AI generation
-
-Our PR: https://github.com/flathub/flathub/pull/7602
-
----
-
-## Preparing for Flatpak Distribution
-
-The work to make cosmic-runkat and cosmic-bing-wallpaper Flatpak-compatible was done simultaneously for both applications. This involved significant architectural refactoring to eliminate systemd dependencies and resolve sandbox compatibility issues.
-
-**Comprehensive documentation:**
-
-- **[FLATPAK-JOURNEY.md](https://github.com/reality2-roycdavies/cosmic-bing-wallpaper/blob/main/docs/FLATPAK-JOURNEY.md)** - The complete story of the Flatpak refactoring, including:
-  - Architecture transformation (systemd → embedded timer)
-  - PID namespace conflicts and the ksni 0.3 solution
-  - Path handling in Flatpak sandboxes
-  - XDG autostart implementation
-  - Debugging sessions and learnings
-
-- **[cosmic-bing-wallpaper DEVELOPMENT.md](https://github.com/reality2-roycdavies/cosmic-bing-wallpaper/blob/main/cosmic-bing-wallpaper/DEVELOPMENT.md#preparing-for-flatpak-distribution)** - Technical details in context
-
-### Key Differences for cosmic-runkat
-
-While the Flatpak preparation is largely the same, cosmic-runkat has a few specific differences:
-
-1. **ksni Blocking API:** cosmic-runkat uses ksni's blocking API (for simplicity in the tray loop):
-   ```rust
-   use ksni::blocking::TrayMethods as BlockingTrayMethods;
-
-   let handle = BlockingTrayMethods::disable_dbus_name(tray, is_sandboxed)
-       .spawn()?;
-   ```
-
-2. **CPU Monitoring Permission:** Requires `--filesystem=host:ro` for `/proc/stat` access:
-   ```yaml
-   finish-args:
-     - --filesystem=host:ro  # Required for /proc/stat CPU monitoring
-   ```
-
-3. **No Timer Needed:** Unlike cosmic-bing-wallpaper, cosmic-runkat doesn't need internal timer functionality - it just monitors CPU continuously while running
-
 ---
 
 ## The v1.0.0 Refactoring Journey
@@ -545,7 +397,7 @@ In January 2026, cosmic-runkat underwent a comprehensive refactoring to transfor
 ### The Five Phases
 
 **Phase 1: Critical Fixes & Foundations** (1 day)
-- Fixed config path Flatpak inconsistency bug
+- Fixed config path inconsistency bug
 - Added config validation with auto-fallback
 - Created infrastructure modules (paths, constants, error)
 - Lockfile race condition fixes

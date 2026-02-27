@@ -90,7 +90,6 @@ This document describes the architecture of cosmic-runkat v2.0.0, a native COSMI
 - Per-source sleep thresholds (CPU %, MHz, °C)
 - Animation source selection
 - Validation with clear error messages
-- Flatpak-aware path resolution
 
 ### cpu.rs - CPU Monitoring
 **Purpose:** Sample per-core CPU usage from /proc/stat
@@ -110,9 +109,6 @@ This document describes the architecture of cosmic-runkat v2.0.0, a native COSMI
 **Fallback Chain:**
 1. Parse COSMIC theme RON files
 2. Default gray colors
-
-### paths.rs - Path Resolution
-**Purpose:** Flatpak-aware config directory resolution
 
 ### constants.rs - Application Constants
 **Purpose:** Centralize timing, animation, and validation values

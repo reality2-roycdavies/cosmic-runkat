@@ -4,7 +4,7 @@ This directory contains documentation about the development process of cosmic-ru
 
 ## About This Project
 
-cosmic-runkat was developed collaboratively between **Dr. Roy C. Davies** and **Claude** (Anthropic's AI assistant) using [Claude Code](https://claude.ai/claude-code). The entire application—from initial concept to working, documented release—was built through natural language conversation in approximately **3 hours**. An additional **~2 hours** were later spent on Flatpak compatibility (done in parallel with cosmic-bing-wallpaper).
+cosmic-runkat was developed collaboratively between **Dr. Roy C. Davies** and **Claude** (Anthropic's AI assistant) using [Claude Code](https://claude.ai/claude-code). The entire application—from initial concept to working, documented release—was built through natural language conversation in approximately **3 hours**.
 
 This is the second project developed using this approach, following [cosmic-bing-wallpaper](https://github.com/reality2-roycdavies/cosmic-bing-wallpaper). Both projects serve as case studies in human-AI collaboration for software development.
 
@@ -17,14 +17,6 @@ This is the second project developed using this approach, following [cosmic-bing
 | [DEVELOPMENT.md](DEVELOPMENT.md) | Technical learnings and solutions discovered during development |
 | [THEMATIC_ANALYSIS.md](THEMATIC_ANALYSIS.md) | Analysis of patterns in AI-assisted development |
 | [transcripts/](transcripts/) | Complete conversation logs from the development sessions |
-
-### Shared Documentation
-
-The Flatpak preparation work was done simultaneously for both cosmic-runkat and cosmic-bing-wallpaper. The comprehensive documentation lives in the cosmic-bing-wallpaper repository:
-
-| Document | Description |
-|----------|-------------|
-| [FLATPAK-JOURNEY.md](https://github.com/reality2-roycdavies/cosmic-bing-wallpaper/blob/main/docs/FLATPAK-JOURNEY.md) | The complete story of making these apps Flatpak-compatible |
 
 ## Why Document This?
 
