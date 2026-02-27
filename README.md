@@ -52,17 +52,46 @@ flatpak-builder --user --install --force-clean build-dir flathub/io.github.reali
 
 ### From Source (Native)
 
-Requires Rust toolchain (1.75+) and COSMIC desktop libraries.
+#### Prerequisites
+
+- [Rust](https://rustup.rs/) toolchain (1.75+)
+- [just](https://github.com/casey/just) command runner
+- System libraries:
+
+```bash
+# Debian/Ubuntu/Pop!_OS
+sudo apt install libwayland-dev libxkbcommon-dev libssl-dev pkg-config just
+
+# Fedora
+sudo dnf install wayland-devel libxkbcommon-devel openssl-devel just
+
+# Arch
+sudo pacman -S wayland libxkbcommon openssl just
+```
+
+#### Build and Install
 
 ```bash
 git clone https://github.com/reality2-roycdavies/cosmic-runkat.git
 cd cosmic-runkat
-cargo build --release
 
-install -Dm755 target/release/cosmic-runkat ~/.local/bin/cosmic-runkat
-install -Dm644 resources/io.github.reality2_roycdavies.cosmic-runkat.desktop ~/.local/share/applications/io.github.reality2_roycdavies.cosmic-runkat.desktop
-install -Dm644 resources/io.github.reality2_roycdavies.cosmic-runkat.svg ~/.local/share/icons/hicolor/scalable/apps/io.github.reality2_roycdavies.cosmic-runkat.svg
-install -Dm644 resources/io.github.reality2_roycdavies.cosmic-runkat-symbolic.svg ~/.local/share/icons/hicolor/symbolic/apps/io.github.reality2_roycdavies.cosmic-runkat-symbolic.svg
+# Build release binary
+just build-release
+
+# Install binary, desktop entry, and icons to ~/.local
+just install-local
+```
+
+#### Other just commands
+
+```bash
+just build-debug       # Debug build
+just run               # Build debug and run
+just run-release       # Build release and run
+just check             # Run clippy checks
+just fmt               # Format code
+just clean             # Clean build artifacts
+just uninstall-local   # Remove installed files
 ```
 
 ### Adding to the Panel

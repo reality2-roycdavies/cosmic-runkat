@@ -1,18 +1,18 @@
 <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
   <!-- Running cat symbolic icon (COSMIC applet style) -->
   <!-- Body -->
-  <ellipse cx="7" cy="8" rx="5" ry="3" fill="#232323"/>
+  <ellipse cx="7" cy="8" rx="5" ry="3" fill="currentColor"/>
   <!-- Head -->
-  <ellipse cx="12" cy="5.5" rx="3" ry="2.8" fill="#232323"/>
+  <ellipse cx="12" cy="5.5" rx="3" ry="2.8" fill="currentColor"/>
   <!-- Ears -->
-  <path d="M10.5,3.5 L11,1 L12,3" fill="#232323"/>
-  <path d="M12.5,3 L13.5,0.5 L14,2.5" fill="#232323"/>
+  <path d="M10.5,3.5 L11,1 L12,3" fill="currentColor"/>
+  <path d="M12.5,3 L13.5,0.5 L14,2.5" fill="currentColor"/>
   <!-- Tail -->
-  <path d="M2,7.5 Q0,6 1.5,3.5" stroke="#232323" stroke-width="1.5" fill="none" stroke-linecap="round"/>
+  <path d="M2,7.5 Q0,6 1.5,3.5" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"/>
   <!-- Front leg -->
-  <rect x="10" y="10.5" width="2" height="4" rx="1" fill="#232323"/>
+  <rect x="10" y="10.5" width="2" height="4" rx="1" fill="currentColor"/>
   <!-- Back leg -->
-  <rect x="5" y="10.5" width="2" height="3.5" rx="1" fill="#232323"/>
+  <rect x="5" y="10.5" width="2" height="3.5" rx="1" fill="currentColor"/>
   <!-- Eye -->
   <circle cx="13.5" cy="5" r="0.8" fill="white"/>
 </svg>
