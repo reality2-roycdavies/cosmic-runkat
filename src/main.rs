@@ -24,6 +24,8 @@ mod theme;
 
 use std::env;
 
+const APPLET_ID: &str = "io.github.reality2_roycdavies.cosmic-runkat";
+
 /// Print command-line usage information
 fn print_help() {
     println!(
@@ -32,9 +34,10 @@ fn print_help() {
 Usage: cosmic-runkat [OPTIONS]
 
 Options:
-    -s, --settings   Open the settings window
-    -h, --help       Show this help message
-    -v, --version    Show version information
+    -s, --settings           Open settings (via hub or standalone)
+    --settings-standalone    Open standalone settings window
+    -h, --help               Show this help message
+    -v, --version            Show version information
 
 No arguments: Run as a COSMIC panel applet.
 "#
@@ -73,7 +76,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 Ok(())
             }
             "-s" | "--settings" => {
-                tracing::info!("Opening settings window");
+                tracing::info!("Opening settings (trying hub first)");
+                open_settings().map_err(|e| e.into())
+            }
+            "--settings-standalone" => {
+                tracing::info!("Opening standalone settings window");
                 settings::run_settings().map_err(|e| e.into())
             }
             arg => {
@@ -84,5 +91,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // Default (no arguments): run as a COSMIC panel applet
         tracing::info!("Starting COSMIC panel applet");
         applet::run_applet().map_err(|e| e.into())
+    }
+}
+
+/// Try to open settings via cosmic-applet-settings hub; fall back to standalone.
+fn open_settings() -> cosmic::iced::Result {
+    use std::process::Command;
+    if Command::new("cosmic-applet-settings")
+        .arg(APPLET_ID)
+        .spawn()
+        .is_ok()
+    {
+        Ok(())
+    } else {
+        settings::run_settings()
     }
 }

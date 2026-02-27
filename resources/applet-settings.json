@@ -1,0 +1,6 @@
+{
+    "name": "RunKat",
+    "icon": "io.github.reality2_roycdavies.cosmic-runkat-symbolic",
+    "applet_id": "io.github.reality2_roycdavies.cosmic-runkat",
+    "settings_cmd": "cosmic-runkat --settings-standalone"
+}
