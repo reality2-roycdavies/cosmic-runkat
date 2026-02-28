@@ -18,6 +18,7 @@ mod constants;
 mod cpu;
 mod error;
 mod settings;
+mod settings_cli;
 mod settings_page;
 mod sysinfo;
 mod theme;
@@ -50,6 +51,37 @@ fn print_version() {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Parse command-line arguments
+    let args: Vec<String> = env::args().collect();
+
+    // Handle settings CLI protocol commands before initializing tracing,
+    // since tracing writes to stdout and would corrupt the JSON output.
+    if args.len() > 1 {
+        match args[1].as_str() {
+            "--settings-describe" => {
+                settings_cli::describe();
+                return Ok(());
+            }
+            "--settings-set" => {
+                if args.len() < 4 {
+                    eprintln!("Usage: cosmic-runkat --settings-set <key> <json_value>");
+                    std::process::exit(1);
+                }
+                settings_cli::set(&args[2], &args[3]);
+                return Ok(());
+            }
+            "--settings-action" => {
+                if args.len() < 3 {
+                    eprintln!("Usage: cosmic-runkat --settings-action <action_id>");
+                    std::process::exit(1);
+                }
+                settings_cli::action(&args[2]);
+                return Ok(());
+            }
+            _ => {}
+        }
+    }
+
     // Set up structured logging using the `tracing` crate.
     // Log level can be overridden with the RUST_LOG environment variable,
     // e.g. RUST_LOG=debug cosmic-runkat
@@ -61,9 +93,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .init();
 
     tracing::info!("Starting cosmic-runkat v{}", env!("CARGO_PKG_VERSION"));
-
-    // Parse command-line arguments
-    let args: Vec<String> = env::args().collect();
 
     if args.len() > 1 {
         match args[1].as_str() {
