@@ -17,6 +17,10 @@ A cute running cat CPU indicator for the [COSMIC desktop environment](https://sy
 **CPU Temperature**
 ![CPU Temperature](screenshots/Screenshot_2026-02-06_20-49-27.png)
 
+**RunKat settings in cosmic-applet-settings hub**
+![RunKat settings in cosmic-applet-settings hub](screenshots/settings-inline.png)
+*RunKat settings in the cosmic-applet-settings hub*
+
 ## Features
 
 - **Native COSMIC Panel Applet**: Integrates directly into the COSMIC panel
