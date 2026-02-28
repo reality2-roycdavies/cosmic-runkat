@@ -521,9 +521,17 @@ impl cosmic::Application for RunkatApplet {
             && self.config.animation_source == AnimationSource::CpuUsage
             && !self.is_sleeping
         {
-            let pct_text = text::body(format!("{:.0}%", self.smoothed_cpu));
-            cosmic::iced::widget::row![cat_image, pct_text]
-                .spacing(4)
+            let pct_num = cosmic::iced::widget::text(format!("{:.0}", self.smoothed_cpu))
+                .font(cosmic::iced::Font::MONOSPACE)
+                .size(11);
+            let pct_sym = cosmic::iced::widget::text("%")
+                .font(cosmic::iced::Font::MONOSPACE)
+                .size(8);
+            let pct_col = cosmic::iced::widget::column![pct_num, pct_sym]
+                .spacing(0)
+                .align_x(cosmic::iced::Alignment::Center);
+            cosmic::iced::widget::row![cat_image, pct_col]
+                .spacing(2)
                 .align_y(cosmic::iced::Alignment::Center)
                 .into()
         } else {
