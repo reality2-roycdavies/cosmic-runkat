@@ -25,7 +25,7 @@
 use cosmic::app::{Core, Task};
 use cosmic::iced::window::Id;
 use cosmic::iced::{Length, Rectangle};
-use cosmic::iced_runtime::core::window;
+use cosmic::iced::window;
 use cosmic::surface::action::{app_popup, destroy_popup};
 use cosmic::widget::{self, text};
 use cosmic::Element;
@@ -626,7 +626,7 @@ impl cosmic::Application for RunkatApplet {
     }
 
     /// Apply the standard COSMIC applet appearance (transparent background, etc.)
-    fn style(&self) -> Option<cosmic::iced_runtime::Appearance> {
+    fn style(&self) -> Option<cosmic::iced::theme::Style> {
         Some(cosmic::applet::style())
     }
 }
@@ -652,8 +652,8 @@ impl RunkatApplet {
     /// Build the popup content: title, scrollable stats area, status text,
     /// and a "Settings" button.  The stats shown depend on the configured
     /// animation source (CPU usage / frequency / temperature).
-    fn popup_content(&self) -> widget::Column<'_, Message> {
-        use cosmic::iced::widget::{column, container, horizontal_space, row, scrollable, Space};
+    fn popup_content(&self) -> Element<'_, Message> {
+        use cosmic::iced::widget::{column, container, row, scrollable, Space};
         use cosmic::iced::{Alignment, Color};
 
         // Title changes based on what we're monitoring
@@ -665,7 +665,7 @@ impl RunkatApplet {
 
         let title_row = row![
             text::body(title_text),
-            horizontal_space(), // push title to the left
+            Space::new().width(Length::Fill), // push title to the left
         ]
         .spacing(8)
         .align_y(Alignment::Center);
@@ -803,7 +803,7 @@ impl RunkatApplet {
 
         let bottom_row = row![
             text::caption(status_text),
-            horizontal_space(),
+            Space::new().width(Length::Fill),
             widget::button::standard("Settings...").on_press(Message::OpenSettings),
         ]
         .spacing(8)
@@ -815,7 +815,7 @@ impl RunkatApplet {
 
         // Thin horizontal line divider between popup sections
         let divider = || {
-            container(Space::new(Length::Fill, Length::Fixed(1.0))).style(
+            container(Space::new().width(Length::Fill).height(Length::Fixed(1.0))).style(
                 |theme: &cosmic::Theme| {
                     let cosmic = theme.cosmic();
                     container::Style {
@@ -832,6 +832,7 @@ impl RunkatApplet {
         column![title_row, divider(), scrollable_stats, divider(), bottom_row,]
             .spacing(8)
             .padding(12)
+            .into()
     }
 
     /// Create a colored progress bar widget.
@@ -880,7 +881,7 @@ impl RunkatApplet {
 
         // Inner container: the colored "filled" part of the bar
         let inner =
-            container(Space::new(Length::Fixed(filled_width), Length::Fixed(BAR_HEIGHT - 2.0)))
+            container(Space::new().width(Length::Fixed(filled_width)).height(Length::Fixed(BAR_HEIGHT - 2.0)))
                 .style(move |_: &cosmic::Theme| container::Style {
                     background: Some(cosmic::iced::Background::Color(bar_color)),
                     border: cosmic::iced::Border {
