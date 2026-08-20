@@ -32,8 +32,11 @@ pub const MAX_FPS: f32 = 30.0;
 
 // === Popup Sizing Constants ===
 
-/// Popup width in pixels
-pub const POPUP_WIDTH: u32 = 340;
+/// Popup width in pixels.
+/// Must be >= popup_container's fixed autosize width (360px); a narrower
+/// surface than the committed buffer triggers an xdg_surface
+/// unconfigured_buffer protocol error that crashes the applet.
+pub const POPUP_WIDTH: u32 = 380;
 
 /// Base popup height (title + dividers + status + padding)
 pub const POPUP_BASE_HEIGHT: u32 = 100;

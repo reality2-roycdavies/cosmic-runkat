@@ -77,7 +77,7 @@ pub fn view(state: &State) -> Element<'_, Message> {
         .add(settings::item("Monitor", source_dropdown))
         .add(settings::flex_item(
             threshold_label,
-            widget::row()
+            widget::Row::new()
                 .spacing(8)
                 .align_y(cosmic::iced::Alignment::Center)
                 .push(text::body(format!(
