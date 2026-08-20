@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.1] - 2026-08-20
+
+### Fixed
+- Panel-icon popup crash (`xdg_surface` `unconfigured_buffer`, Protocol error 3) under the shipped COSMIC compositor: the applet was killed on click and respawned by the panel, so the icon kept disappearing. Ported to libcosmic `511384f` (the revision the crash-free stock applets build from).
+
+### Changed
+- libcosmic → `511384f`, enabled the `tokio` feature, `futures-channel` → 0.3.34; ported source to the new libcosmic API (`app_popup` live-settings arg, `Subscription::run`, `iced_runtime` path moves, `cosmic::widget` builders). Popup width raised to 380px (≥ the popup container's 360px floor). Requires rustc 1.93+.
+
 ## [2.1.0] - 2026-02-06
 
 ### Removed
