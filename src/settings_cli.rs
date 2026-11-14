@@ -2,7 +2,7 @@
 //!
 //! Supports `--settings-describe`, `--settings-set`, and `--settings-action`.
 
-use crate::config::{AnimationSource, Config};
+use crate::config::{AnimationSource, Config, Runner};
 
 /// Output the settings schema as JSON to stdout.
 pub fn describe() {
@@ -20,10 +20,15 @@ pub fn describe() {
             }
         };
 
-    let source_value = match config.animation_source {
-        AnimationSource::CpuUsage => "CpuUsage",
-        AnimationSource::Frequency => "Frequency",
-        AnimationSource::Temperature => "Temperature",
+    let source_value = SOURCE_KEYS[AnimationSource::ALL
+        .iter()
+        .position(|&s| s == config.animation_source)
+        .unwrap_or(0)];
+    let options = |keys: &[&str], names: &[&str]| -> Vec<serde_json::Value> {
+        keys.iter()
+            .zip(names)
+            .map(|(k, n)| serde_json::json!({"value": k, "label": n}))
+            .collect()
     };
 
     let schema = serde_json::json!({
@@ -35,15 +40,19 @@ pub fn describe() {
                 "items": [
                     {
                         "type": "select",
+                        "key": "runner",
+                        "label": "Runner",
+                        "value": RUNNER_KEYS[Runner::ALL.iter().position(|&r| r == config.runner).unwrap_or(0)],
+                        "options": options(RUNNER_KEYS, Runner::NAMES)
+                    },
+                    {
+                        "type": "select",
                         "key": "animation_source",
                         "label": "Monitor",
                         "value": source_value,
-                        "options": [
-                            {"value": "CpuUsage", "label": "CPU Usage"},
-                            {"value": "Frequency", "label": "CPU Frequency"},
-                            {"value": "Temperature", "label": "CPU Temperature"}
-                        ]
+                        "options": options(SOURCE_KEYS, AnimationSource::NAMES)
                     },
+
                     {
                         "type": "slider",
                         "key": "sleep_threshold",
@@ -58,8 +67,7 @@ pub fn describe() {
                         "type": "toggle",
                         "key": "show_percentage",
                         "label": "Show % on Icon",
-                        "value": config.show_percentage,
-                        "visible_when": {"key": "animation_source", "equals": "CpuUsage"}
+                        "value": config.show_percentage
                     }
                 ]
             }
@@ -72,29 +80,35 @@ pub fn describe() {
     println!("{}", serde_json::to_string_pretty(&schema).unwrap());
 }
 
+/// Values used for select options, in the same order as the `ALL` arrays
+const SOURCE_KEYS: &[&str] = &["CpuUsage", "Frequency", "Temperature"];
+const RUNNER_KEYS: &[&str] = &["Cat", "Horse", "Parrot"];
+
+/// Look up a JSON string value in a key list, returning its index
+fn select_index(keys: &[&str], value: &str) -> Option<usize> {
+    let parsed: String = serde_json::from_str(value).ok()?;
+    keys.iter().position(|k| *k == parsed)
+}
+
 /// Set a single setting by key. Prints JSON result to stdout.
 pub fn set(key: &str, value: &str) {
     let mut config = Config::load();
 
     let result = match key {
-        "animation_source" => {
-            let parsed: Result<String, _> = serde_json::from_str(value);
-            match parsed.as_deref() {
-                Ok("CpuUsage") => {
-                    config.animation_source = AnimationSource::CpuUsage;
-                    Ok("Updated animation source")
-                }
-                Ok("Frequency") => {
-                    config.animation_source = AnimationSource::Frequency;
-                    Ok("Updated animation source")
-                }
-                Ok("Temperature") => {
-                    config.animation_source = AnimationSource::Temperature;
-                    Ok("Updated animation source")
-                }
-                _ => Err(format!("Invalid animation_source: {value}")),
+        "animation_source" => match select_index(SOURCE_KEYS, value) {
+            Some(i) => {
+                config.animation_source = AnimationSource::ALL[i];
+                Ok("Updated animation source")
             }
-        }
+            None => Err(format!("Invalid animation_source: {value}")),
+        },
+        "runner" => match select_index(RUNNER_KEYS, value) {
+            Some(i) => {
+                config.runner = Runner::ALL[i];
+                Ok("Updated runner")
+            }
+            None => Err(format!("Invalid runner: {value}")),
+        },
         "sleep_threshold" => match serde_json::from_str::<f64>(value) {
             Ok(v) => {
                 config.set_current_threshold(v as f32);

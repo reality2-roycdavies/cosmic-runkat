@@ -43,6 +43,31 @@ impl AnimationSource {
         "CPU Frequency",
         "CPU Temperature",
     ];
+
+    /// True for sources measured as a plain 0-100% load, which can show
+    /// the percentage label next to the runner.
+    pub fn is_percentage(self) -> bool {
+        matches!(self, AnimationSource::CpuUsage)
+    }
+}
+
+/// Which animal runs in the panel.  All runner artwork comes from RunCat365.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "kebab-case")]
+pub enum Runner {
+    #[default]
+    Cat,
+    Horse,
+    Parrot,
+}
+
+impl Runner {
+    pub const ALL: &'static [Runner] = &[Runner::Cat, Runner::Horse, Runner::Parrot];
+    pub const NAMES: &'static [&'static str] = &["Cat", "Horse", "Parrot"];
+
+    pub fn name(self) -> &'static str {
+        Self::NAMES[Self::ALL.iter().position(|&r| r == self).unwrap_or(0)]
+    }
 }
 
 /// User-configurable application settings.
@@ -77,6 +102,10 @@ pub struct Config {
     /// Which system metric drives the animation and popup display
     #[serde(default)]
     pub animation_source: AnimationSource,
+
+    /// Which animal runs in the panel
+    #[serde(default)]
+    pub runner: Runner,
 }
 
 // Default value functions for serde — called when a field is missing from
@@ -95,6 +124,7 @@ impl Default for Config {
             min_fps: 2.0,
             show_percentage: true,
             animation_source: AnimationSource::default(),
+            runner: Runner::default(),
         }
     }
 }
@@ -227,12 +257,12 @@ impl Config {
         Ok(())
     }
 
-    /// Calculate how fast the cat should animate based on a 0-100% metric.
+    /// Calculate how fast the runner should animate based on a 0-100% metric.
     ///
     /// Uses linear interpolation: at 0% -> `min_fps`, at 100% -> `max_fps`.
     /// Values outside 0-100 are clamped.
-    pub fn calculate_fps(&self, cpu_percent: f32) -> f32 {
-        let normalized = (cpu_percent / 100.0).clamp(0.0, 1.0);
+    pub fn calculate_fps(&self, percent: f32) -> f32 {
+        let normalized = (percent / 100.0).clamp(0.0, 1.0);
         self.min_fps + normalized * (self.max_fps - self.min_fps)
     }
 }
@@ -295,6 +325,28 @@ mod tests {
 
         // At 100% CPU = max fps
         assert!((config.calculate_fps(100.0) - config.max_fps).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_old_config_gets_new_defaults() {
+        let old = r#"{"sleep_threshold_cpu": 10.0, "max_fps": 15.0, "min_fps": 2.0,
+                      "show_percentage": false, "animation_source": "cpu-usage"}"#;
+        let config: Config = serde_json::from_str(old).unwrap();
+        assert_eq!(config.runner, Runner::Cat);
+        assert!(config.validate().is_ok());
+    }
+
+    #[test]
+    fn test_new_fields_round_trip() {
+        let mut config = Config::default();
+        config.runner = Runner::Parrot;
+        config.animation_source = AnimationSource::Temperature;
+        let json = serde_json::to_string(&config).unwrap();
+        assert!(json.contains(r#""runner":"parrot""#));
+        assert!(json.contains(r#""animation_source":"temperature""#));
+        let back: Config = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.runner, Runner::Parrot);
+        assert_eq!(back.animation_source, AnimationSource::Temperature);
     }
 
     #[test]

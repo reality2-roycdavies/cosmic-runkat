@@ -8,7 +8,7 @@ use cosmic::iced::Length;
 use cosmic::widget::{self, settings, text, toggler};
 use cosmic::Element;
 
-use crate::config::{AnimationSource, Config};
+use crate::config::{AnimationSource, Config, Runner};
 
 pub struct State {
     pub config: Config,
@@ -20,6 +20,7 @@ pub enum Message {
     SleepThresholdChanged(f32),
     ShowPercentageToggled(bool),
     AnimationSourceChanged(AnimationSource),
+    RunnerChanged(Runner),
 }
 
 pub fn init() -> State {
@@ -42,6 +43,10 @@ pub fn update(state: &mut State, message: Message) {
         }
         Message::AnimationSourceChanged(source) => {
             state.config.animation_source = source;
+            let _ = state.config.save();
+        }
+        Message::RunnerChanged(runner) => {
+            state.config.runner = runner;
             let _ = state.config.save();
         }
     }
@@ -67,6 +72,13 @@ pub fn view(state: &State) -> Element<'_, Message> {
             AnimationSource::Temperature => ("Sleep Below", 20.0..=100.0, "\u{00b0}C"),
         };
 
+    let runner_dropdown = widget::dropdown(
+        Runner::NAMES,
+        Runner::ALL.iter().position(|&r| r == state.config.runner),
+        |idx| Message::RunnerChanged(Runner::ALL[idx]),
+    )
+    .width(Length::Fixed(150.0));
+
     let display_threshold = state
         .config
         .current_threshold()
@@ -74,6 +86,7 @@ pub fn view(state: &State) -> Element<'_, Message> {
 
     let mut behavior_section = settings::section()
         .title("Behavior")
+        .add(settings::item("Runner", runner_dropdown))
         .add(settings::item("Monitor", source_dropdown))
         .add(settings::flex_item(
             threshold_label,
@@ -95,7 +108,7 @@ pub fn view(state: &State) -> Element<'_, Message> {
                 ),
         ));
 
-    if state.config.animation_source == AnimationSource::CpuUsage {
+    if state.config.animation_source.is_percentage() {
         behavior_section = behavior_section.add(settings::item(
             "Show % on Icon",
             toggler(state.config.show_percentage).on_toggle(Message::ShowPercentageToggled),
@@ -105,7 +118,7 @@ pub fn view(state: &State) -> Element<'_, Message> {
     settings::view_column(vec![
         page_title.into(),
         text::caption(
-            "The cat runs faster based on the selected metric. Click the panel applet to see details.",
+            "The runner speeds up with the selected metric. Click the panel applet to see details.",
         )
         .into(),
         behavior_section.into(),
