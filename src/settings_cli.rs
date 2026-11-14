@@ -18,6 +18,8 @@ pub fn describe() {
             AnimationSource::Temperature => {
                 (0.0, 150.0, 1.0, "°C", config.sleep_threshold_temp as f64)
             }
+            AnimationSource::Memory => (0.0, 90.0, 1.0, "%", config.sleep_threshold_mem as f64),
+            AnimationSource::Gpu => (0.0, 30.0, 1.0, "%", config.sleep_threshold_gpu as f64),
         };
 
     let source_value = SOURCE_KEYS[AnimationSource::ALL
@@ -81,7 +83,7 @@ pub fn describe() {
 }
 
 /// Values used for select options, in the same order as the `ALL` arrays
-const SOURCE_KEYS: &[&str] = &["CpuUsage", "Frequency", "Temperature"];
+const SOURCE_KEYS: &[&str] = &["CpuUsage", "Frequency", "Temperature", "Memory", "Gpu"];
 const RUNNER_KEYS: &[&str] = &["Cat", "Horse", "Parrot"];
 
 /// Look up a JSON string value in a key list, returning its index

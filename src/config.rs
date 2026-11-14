@@ -16,7 +16,7 @@ use std::path::{Path, PathBuf};
 /// What system metric drives the cat animation speed.
 ///
 /// This enum is stored in the config file as a kebab-case string
-/// (e.g. `"cpu-usage"`, `"frequency"`, `"temperature"`).
+/// (e.g. `"cpu-usage"`, `"frequency"`, `"temperature"`, `"memory"`, `"gpu"`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "kebab-case")]
 pub enum AnimationSource {
@@ -27,6 +27,10 @@ pub enum AnimationSource {
     Frequency,
     /// Cat speed reflects CPU temperature
     Temperature,
+    /// Cat speed reflects RAM usage percentage
+    Memory,
+    /// Cat speed reflects GPU load (busiest GPU)
+    Gpu,
 }
 
 impl AnimationSource {
@@ -35,6 +39,8 @@ impl AnimationSource {
         AnimationSource::CpuUsage,
         AnimationSource::Frequency,
         AnimationSource::Temperature,
+        AnimationSource::Memory,
+        AnimationSource::Gpu,
     ];
 
     /// Human-readable names corresponding to `ALL` — shown in the settings UI
@@ -42,12 +48,17 @@ impl AnimationSource {
         "CPU Usage",
         "CPU Frequency",
         "CPU Temperature",
+        "Memory Usage",
+        "GPU Usage",
     ];
 
     /// True for sources measured as a plain 0-100% load, which can show
     /// the percentage label next to the runner.
     pub fn is_percentage(self) -> bool {
-        matches!(self, AnimationSource::CpuUsage)
+        matches!(
+            self,
+            AnimationSource::CpuUsage | AnimationSource::Memory | AnimationSource::Gpu
+        )
     }
 }
 
@@ -90,6 +101,14 @@ pub struct Config {
     #[serde(default = "default_temp_threshold")]
     pub sleep_threshold_temp: f32,
 
+    /// Below this RAM usage %, the runner sleeps (memory mode only)
+    #[serde(default = "default_mem_threshold")]
+    pub sleep_threshold_mem: f32,
+
+    /// Below this GPU load %, the runner sleeps (GPU mode only)
+    #[serde(default = "default_gpu_threshold")]
+    pub sleep_threshold_gpu: f32,
+
     /// Fastest the animation can run (frames per second)
     pub max_fps: f32,
 
@@ -113,6 +132,8 @@ pub struct Config {
 fn default_cpu_threshold() -> f32 { 5.0 }
 fn default_freq_threshold() -> f32 { 1000.0 }  // 1 GHz
 fn default_temp_threshold() -> f32 { 40.0 }     // 40 C
+fn default_mem_threshold() -> f32 { 0.0 }       // never sleep on RAM
+fn default_gpu_threshold() -> f32 { 5.0 }
 
 impl Default for Config {
     fn default() -> Self {
@@ -120,6 +141,8 @@ impl Default for Config {
             sleep_threshold_cpu: 5.0,
             sleep_threshold_freq: 1000.0,
             sleep_threshold_temp: 40.0,
+            sleep_threshold_mem: default_mem_threshold(),
+            sleep_threshold_gpu: default_gpu_threshold(),
             max_fps: 15.0,
             min_fps: 2.0,
             show_percentage: true,
@@ -138,6 +161,8 @@ impl Config {
             AnimationSource::CpuUsage => self.sleep_threshold_cpu,
             AnimationSource::Frequency => self.sleep_threshold_freq,
             AnimationSource::Temperature => self.sleep_threshold_temp,
+            AnimationSource::Memory => self.sleep_threshold_mem,
+            AnimationSource::Gpu => self.sleep_threshold_gpu,
         }
     }
 
@@ -148,6 +173,8 @@ impl Config {
             AnimationSource::CpuUsage => self.sleep_threshold_cpu = value,
             AnimationSource::Frequency => self.sleep_threshold_freq = value,
             AnimationSource::Temperature => self.sleep_threshold_temp = value,
+            AnimationSource::Memory => self.sleep_threshold_mem = value,
+            AnimationSource::Gpu => self.sleep_threshold_gpu = value,
         }
     }
 
@@ -231,6 +258,15 @@ impl Config {
                 "sleep_threshold_temp must be between 0 and 150\u{00b0}C, got {}",
                 self.sleep_threshold_temp
             ));
+        }
+
+        for (name, v) in [
+            ("sleep_threshold_mem", self.sleep_threshold_mem),
+            ("sleep_threshold_gpu", self.sleep_threshold_gpu),
+        ] {
+            if !(0.0..=100.0).contains(&v) {
+                return Err(format!("{name} must be between 0 and 100, got {v}"));
+            }
         }
 
         if !(MIN_FPS..=MAX_FPS).contains(&self.min_fps) {
@@ -340,13 +376,13 @@ mod tests {
     fn test_new_fields_round_trip() {
         let mut config = Config::default();
         config.runner = Runner::Parrot;
-        config.animation_source = AnimationSource::Temperature;
+        config.animation_source = AnimationSource::Gpu;
         let json = serde_json::to_string(&config).unwrap();
         assert!(json.contains(r#""runner":"parrot""#));
-        assert!(json.contains(r#""animation_source":"temperature""#));
+        assert!(json.contains(r#""animation_source":"gpu""#));
         let back: Config = serde_json::from_str(&json).unwrap();
         assert_eq!(back.runner, Runner::Parrot);
-        assert_eq!(back.animation_source, AnimationSource::Temperature);
+        assert_eq!(back.animation_source, AnimationSource::Gpu);
     }
 
     #[test]

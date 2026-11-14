@@ -24,6 +24,9 @@ pub const SLEEP_TICK: Duration = Duration::from_millis(66);
 /// Seconds for one "z" to float up from the sleeper's head and fade out
 pub const ZZZ_PERIOD_SECS: f32 = 3.0;
 
+/// How often the NVIDIA GPU is polled through nvidia-smi
+pub const NVIDIA_POLL_INTERVAL: Duration = Duration::from_secs(2);
+
 /// Width reserved in the panel for the stacked "42 / %" label
 pub const PCT_LABEL_WIDTH: f32 = 20.0;
 

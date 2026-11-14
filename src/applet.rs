@@ -9,8 +9,8 @@
 //! 1. **Animation**: Runner sprites (cat, horse, parrot, from RunCat365) are
 //!    embedded in the binary at compile time.  A timer ticks about 30 times
 //!    per second to advance the animation frame.  The animation speed (FPS)
-//!    is scaled by the chosen metric (CPU usage, frequency or
-//!    temperature).  While asleep, little z's float up from the runner.
+//!    is scaled by the chosen metric (CPU usage, frequency, temperature,
+//!    memory or GPU).  While asleep, little z's float up from the runner.
 //!
 //! 2. **Theme integration**: The cat sprite is recolored to match the
 //!    COSMIC desktop accent color. When the user changes their theme,
@@ -34,7 +34,8 @@ use cosmic::Element;
 use crate::config::{AnimationSource, Config, Runner};
 use crate::constants::*;
 use crate::cpu::{CpuMonitor, CpuUsage};
-use crate::sysinfo::{CpuFrequency, CpuTemperature};
+use crate::gpu::{GpuInfo, GpuMonitor};
+use crate::sysinfo::{kib_to_gib, CpuFrequency, CpuTemperature, MemoryInfo};
 use crate::theme;
 
 use image::RgbaImage;
@@ -342,6 +343,14 @@ pub struct RunkatApplet {
     cpu_frequency: CpuFrequency,
     /// Latest CPU temperature readings from hwmon
     cpu_temperature: CpuTemperature,
+    /// Latest RAM / swap usage
+    memory: MemoryInfo,
+    /// Background thread polling GPU load (only while GPU is the source)
+    gpu_monitor: GpuMonitor,
+    /// Latest GPU readings
+    gpu_info: GpuInfo,
+    /// Smoothed load of the busiest GPU
+    smoothed_gpu: f32,
 
     // --- CPU smoothing ---
     /// Rolling window of recent CPU samples for averaging
@@ -412,6 +421,10 @@ impl cosmic::Application for RunkatApplet {
             cpu_usage: CpuUsage::default(),
             cpu_frequency: CpuFrequency::read(),
             cpu_temperature: CpuTemperature::read(),
+            memory: MemoryInfo::read(),
+            gpu_monitor: GpuMonitor::start(),
+            gpu_info: GpuInfo::default(),
+            smoothed_gpu: 0.0,
             cpu_samples: VecDeque::with_capacity(CPU_SAMPLE_COUNT),
             smoothed_cpu: 0.0,
             config,
@@ -493,6 +506,16 @@ impl cosmic::Application for RunkatApplet {
                 // Also refresh frequency and temperature (read directly from sysfs)
                 self.cpu_frequency = CpuFrequency::read();
                 self.cpu_temperature = CpuTemperature::read();
+                self.memory = MemoryInfo::read();
+
+                // GPU is only polled while it is the selected source
+                let gpu_active = self.config.animation_source == AnimationSource::Gpu;
+                self.gpu_monitor.set_active(gpu_active);
+                if gpu_active {
+                    self.gpu_info = self.gpu_monitor.current();
+                    let busy = self.gpu_info.max_busy();
+                    self.smoothed_gpu += (busy - self.smoothed_gpu) * 0.4;
+                }
 
                 // Update the hover tooltip text
                 self.tooltip = self.make_tooltip();
@@ -666,14 +689,18 @@ impl cosmic::Application for RunkatApplet {
                             let new_id = Id::unique();
                             state.popup = Some(new_id);
 
-                            // Size the popup to fit the number of CPU cores
+                            // Size the popup to fit the rows it will show
                             let core_count = state.cpu_usage.per_core.len().max(
                                 state.cpu_frequency.per_core.len().max(
                                     state.cpu_temperature.per_core.len(),
                                 ),
                             );
-                            let visible_rows =
-                                (core_count as u32 + 1).min(POPUP_MAX_ROWS);
+                            let rows = match state.config.animation_source {
+                                AnimationSource::Memory => 2,
+                                AnimationSource::Gpu => 3 * state.gpu_info.gpus.len().max(1),
+                                _ => core_count + 1,
+                            };
+                            let visible_rows = (rows as u32).min(POPUP_MAX_ROWS);
                             let popup_height =
                                 POPUP_BASE_HEIGHT + visible_rows * POPUP_ROW_HEIGHT;
 
@@ -765,6 +792,14 @@ impl RunkatApplet {
                 let metric = self.cpu_temperature.percentage();
                 (metric, actual < self.config.sleep_threshold_temp)
             }
+            AnimationSource::Memory => {
+                let m = self.memory.used_percent();
+                (m, m < self.config.sleep_threshold_mem)
+            }
+            AnimationSource::Gpu => {
+                let m = self.smoothed_gpu;
+                (m, m < self.config.sleep_threshold_gpu)
+            }
         }
     }
 
@@ -778,6 +813,13 @@ impl RunkatApplet {
             AnimationSource::Temperature => {
                 format!("CPU: {:.1}\u{00b0}C", self.cpu_temperature.max_temp())
             }
+            AnimationSource::Memory => format!(
+                "RAM: {:.0}% ({:.1} / {:.1} GiB)",
+                self.memory.used_percent(),
+                kib_to_gib(self.memory.used_kb()),
+                kib_to_gib(self.memory.total_kb),
+            ),
+            AnimationSource::Gpu => format!("GPU: {:.0}%", self.smoothed_gpu),
         }
     }
 
@@ -793,6 +835,8 @@ impl RunkatApplet {
             AnimationSource::CpuUsage => "CPU Usage",
             AnimationSource::Frequency => "CPU Frequency",
             AnimationSource::Temperature => "CPU Temperature",
+            AnimationSource::Memory => "Memory Usage",
+            AnimationSource::Gpu => "GPU Usage",
         };
 
         let title_row = row![
@@ -901,6 +945,70 @@ impl RunkatApplet {
                 }
 
                 temp_column.into()
+            }
+
+            AnimationSource::Memory => {
+                let m = &self.memory;
+                let gib = |used: u64, total: u64| {
+                    format!("{:.1} / {:.1} GiB", kib_to_gib(used), kib_to_gib(total))
+                };
+                let mut col = column![row![
+                    text::caption("RAM:").width(Length::Fixed(80.0)),
+                    self.progress_bar(m.used_percent(), 100.0, false),
+                    text::caption(gib(m.used_kb(), m.total_kb)).width(Length::Fixed(110.0)),
+                ]
+                .spacing(8)
+                .align_y(Alignment::Center)]
+                .spacing(4);
+                if m.swap_total_kb > 0 {
+                    col = col.push(
+                        row![
+                            text::caption("Swap:").width(Length::Fixed(80.0)),
+                            self.progress_bar(m.swap_percent(), 100.0, false),
+                            text::caption(gib(m.swap_used_kb(), m.swap_total_kb))
+                                .width(Length::Fixed(110.0)),
+                        ]
+                        .spacing(8)
+                        .align_y(Alignment::Center),
+                    );
+                }
+                col.into()
+            }
+
+            AnimationSource::Gpu => {
+                let mut col = column![].spacing(4);
+                if self.gpu_info.gpus.is_empty() {
+                    col = col.push(text::caption("Looking for GPUs..."));
+                }
+                for gpu in &self.gpu_info.gpus {
+                    col = col.push(text::caption(gpu.name.clone()));
+                    let load: Element<'_, Message> = match (gpu.asleep, gpu.busy) {
+                        (true, _) => text::caption("Powered down (not polled)").into(),
+                        (false, Some(busy)) => row![
+                            text::caption("Load:").width(Length::Fixed(80.0)),
+                            self.progress_bar(busy, 100.0, false),
+                            text::caption(format!("{:5.1}%", busy)).width(Length::Fixed(110.0)),
+                        ]
+                        .spacing(8)
+                        .align_y(Alignment::Center)
+                        .into(),
+                        (false, None) => text::caption("Load not available").into(),
+                    };
+                    col = col.push(load);
+                    if let (Some(used), Some(total)) = (gpu.vram_used_mb, gpu.vram_total_mb) {
+                        col = col.push(
+                            row![
+                                text::caption("VRAM:").width(Length::Fixed(80.0)),
+                                self.progress_bar(used as f32, total as f32, false),
+                                text::caption(format!("{} / {} MB", used, total))
+                                    .width(Length::Fixed(110.0)),
+                            ]
+                            .spacing(8)
+                            .align_y(Alignment::Center),
+                        );
+                    }
+                }
+                col.into()
             }
         };
 

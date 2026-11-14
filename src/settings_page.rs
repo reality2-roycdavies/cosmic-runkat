@@ -70,6 +70,8 @@ pub fn view(state: &State) -> Element<'_, Message> {
             AnimationSource::CpuUsage => ("Sleep Below", 0.0..=30.0, "%"),
             AnimationSource::Frequency => ("Sleep Below", 0.0..=state.max_freq_mhz, " MHz"),
             AnimationSource::Temperature => ("Sleep Below", 20.0..=100.0, "\u{00b0}C"),
+            AnimationSource::Memory => ("Sleep Below", 0.0..=90.0, "%"),
+            AnimationSource::Gpu => ("Sleep Below", 0.0..=30.0, "%"),
         };
 
     let runner_dropdown = widget::dropdown(
