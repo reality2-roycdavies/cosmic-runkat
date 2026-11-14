@@ -22,6 +22,8 @@
 //!
 //! 4. **Settings**: A "Settings" button in the popup spawns a separate
 //!    process (`cosmic-runkat --settings`) to avoid blocking the applet.
+//!
+//! 5. **Middle-click** opens a system monitor (configurable).
 
 use cosmic::app::{Core, Task};
 use cosmic::iced::window::Id;
@@ -78,6 +80,9 @@ pub enum Message {
 
     /// User clicked the "Settings" button in the popup.
     OpenSettings,
+
+    /// User middle-clicked the applet: open a system monitor.
+    MiddleClick,
 }
 
 // ---------------------------------------------------------------------------
@@ -587,6 +592,11 @@ impl cosmic::Application for RunkatApplet {
                     }
                 });
             }
+
+            Message::MiddleClick => {
+                let custom = self.config.middle_click_command.trim().to_string();
+                std::thread::spawn(move || launch_system_monitor(&custom));
+            }
         }
 
         Task::none()
@@ -658,6 +668,8 @@ impl cosmic::Application for RunkatApplet {
         } else {
             cat_image.into()
         };
+        // Middle-click opens a system monitor; left-click still reaches the button
+        let content = cosmic::iced::widget::mouse_area(content).on_middle_press(Message::MiddleClick);
 
         // Wrap in an applet button that toggles the popup on click
         let have_popup = self.popup;
@@ -1133,6 +1145,73 @@ impl RunkatApplet {
                 ..Default::default()
             })
             .into()
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Middle-click: system monitor launcher
+// ---------------------------------------------------------------------------
+
+/// Graphical system monitors, in order of preference
+const GUI_MONITORS: &[&str] = &[
+    "missioncenter",
+    "mission-center",
+    "gnome-system-monitor",
+    "observatory",
+    "resources",
+    "plasma-systemmonitor",
+];
+
+/// Terminal system monitors, run inside a terminal if no GUI one exists
+const TUI_MONITORS: &[&str] = &["btop", "htop", "top"];
+
+/// Terminals and the flag that makes them run a command
+const TERMINALS: &[(&str, &[&str])] = &[
+    ("cosmic-term", &["-e"]),
+    ("x-terminal-emulator", &["-e"]),
+    ("gnome-terminal", &["--"]),
+    ("konsole", &["-e"]),
+    ("alacritty", &["-e"]),
+    ("kitty", &[]),
+    ("foot", &[]),
+];
+
+fn in_path(program: &str) -> bool {
+    std::env::var_os("PATH").is_some_and(|paths| {
+        std::env::split_paths(&paths).any(|dir| dir.join(program).is_file())
+    })
+}
+
+/// The command middle-click runs: the user's own if set, otherwise the
+/// first GUI system monitor found, otherwise a terminal monitor in a terminal.
+fn system_monitor_command(custom: &str) -> Option<std::process::Command> {
+    use std::process::Command;
+    if !custom.is_empty() {
+        let mut cmd = Command::new("sh");
+        cmd.args(["-c", custom]);
+        return Some(cmd);
+    }
+    if let Some(gui) = GUI_MONITORS.iter().find(|p| in_path(p)) {
+        return Some(Command::new(gui));
+    }
+    let tui = TUI_MONITORS.iter().find(|p| in_path(p))?;
+    let (term, flag) = TERMINALS.iter().find(|(t, _)| in_path(t))?;
+    let mut cmd = Command::new(term);
+    cmd.args(*flag).arg(tui);
+    Some(cmd)
+}
+
+/// Runs on its own thread: start the monitor and reap it when it exits.
+fn launch_system_monitor(custom: &str) {
+    let Some(mut cmd) = system_monitor_command(custom) else {
+        tracing::warn!("Middle-click: no system monitor found");
+        return;
+    };
+    match cmd.spawn() {
+        Ok(mut child) => {
+            let _ = child.wait();
+        }
+        Err(e) => tracing::warn!("Middle-click: failed to start system monitor: {e}"),
     }
 }
 

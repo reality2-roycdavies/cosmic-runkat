@@ -120,7 +120,7 @@ pub fn view(state: &State) -> Element<'_, Message> {
     settings::view_column(vec![
         page_title.into(),
         text::caption(
-            "The runner speeds up with the selected metric. Click the panel applet to see details.",
+            "The runner speeds up with the selected metric. Click the applet for details, middle-click for a system monitor.",
         )
         .into(),
         behavior_section.into(),

@@ -143,6 +143,12 @@ pub struct Config {
     /// How the metric maps to animation speed
     #[serde(default)]
     pub speed_curve: SpeedCurve,
+
+    /// Command run when the applet is middle-clicked.  Empty means "find a
+    /// system monitor automatically".  Set in config.json only; not shown in
+    /// the settings UI.
+    #[serde(default)]
+    pub middle_click_command: String,
 }
 
 // Default value functions for serde — called when a field is missing from
@@ -167,6 +173,7 @@ impl Default for Config {
             animation_source: AnimationSource::default(),
             runner: Runner::default(),
             speed_curve: SpeedCurve::default(),
+            middle_click_command: String::new(),
         }
     }
 }
@@ -409,6 +416,7 @@ mod tests {
         let config: Config = serde_json::from_str(old).unwrap();
         assert_eq!(config.runner, Runner::Cat);
         assert_eq!(config.speed_curve, SpeedCurve::RunCat);
+        assert!(config.middle_click_command.is_empty());
         assert!(config.validate().is_ok());
     }
 
