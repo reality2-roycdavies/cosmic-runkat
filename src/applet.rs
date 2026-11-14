@@ -109,29 +109,26 @@ impl SpriteCache {
     fn load() -> Self {
         // Helper closure: try to decode a PNG byte slice into an RGBA image
         let load_img = |data: &[u8]| -> Option<RgbaImage> {
-            image::load_from_memory(data).ok().map(|i| i.to_rgba8())
+            image::load_from_memory(data)
+                .ok()
+                .map(|i| crop_sprite(&i.to_rgba8()))
         };
 
         // Load the sleeping cat sprite (single frame)
         let cat_sleep = load_img(include_bytes!("../resources/cat-sleep.png"))
-            .unwrap_or_else(|| create_fallback_icon(CAT_SIZE));
+            .unwrap_or_else(|| crop_sprite(&create_fallback_icon(CAT_SIZE)));
 
-        // Load all 10 running animation frames
+        // Load all 5 running animation frames (cat sprite from RunCat365, Apache-2.0)
         let cat_frames: Vec<RgbaImage> = vec![
             load_img(include_bytes!("../resources/cat-run-0.png")),
             load_img(include_bytes!("../resources/cat-run-1.png")),
             load_img(include_bytes!("../resources/cat-run-2.png")),
             load_img(include_bytes!("../resources/cat-run-3.png")),
             load_img(include_bytes!("../resources/cat-run-4.png")),
-            load_img(include_bytes!("../resources/cat-run-5.png")),
-            load_img(include_bytes!("../resources/cat-run-6.png")),
-            load_img(include_bytes!("../resources/cat-run-7.png")),
-            load_img(include_bytes!("../resources/cat-run-8.png")),
-            load_img(include_bytes!("../resources/cat-run-9.png")),
         ]
         .into_iter()
         // If any PNG fails to load, substitute a simple grey circle
-        .map(|opt| opt.unwrap_or_else(|| create_fallback_icon(CAT_SIZE)))
+        .map(|opt| opt.unwrap_or_else(|| crop_sprite(&create_fallback_icon(CAT_SIZE))))
         .collect();
 
         // Clone originals into the "colored" slots — they'll be recolored
@@ -179,6 +176,13 @@ impl SpriteCache {
 // ---------------------------------------------------------------------------
 // Image utility functions
 // ---------------------------------------------------------------------------
+
+/// Cut a 32x32 sprite down to the strip that actually holds the cat.
+fn crop_sprite(img: &RgbaImage) -> RgbaImage {
+    let top = CAT_CROP_TOP.min(img.height());
+    let height = CAT_CROP_HEIGHT.min(img.height() - top);
+    image::imageops::crop_imm(img, 0, top, img.width(), height).to_image()
+}
 
 /// Replace every non-transparent pixel's color with `(r, g, b)`,
 /// preserving the original alpha channel.  This is how we "tint"
@@ -238,7 +242,7 @@ pub struct RunkatApplet {
     sprites: SpriteCache,
 
     // --- Animation state ---
-    /// Which run-cycle frame we're currently showing (0..9)
+    /// Which run-cycle frame we're currently showing (0..4)
     current_frame: u8,
     /// True when the monitored metric is below the sleep threshold
     is_sleeping: bool,
@@ -384,7 +388,7 @@ impl cosmic::Application for RunkatApplet {
                         // Calculate how long each frame should be shown
                         let frame_duration = Duration::from_secs_f32(1.0 / fps);
                         if self.last_frame_time.elapsed() >= frame_duration {
-                            // Wrap around: frame 0, 1, 2, ..., 9, 0, 1, ...
+                            // Wrap around: frame 0, 1, 2, 3, 4, 0, 1, ...
                             self.current_frame = (self.current_frame + 1) % RUN_FRAMES;
                             self.last_frame_time = std::time::Instant::now();
                         }
@@ -508,19 +512,30 @@ impl cosmic::Application for RunkatApplet {
         // Get the current cat frame as a renderable image handle
         let handle = self.sprites.frame_handle(self.current_frame, self.is_sleeping);
 
-        // Ask the COSMIC applet framework for the suggested icon size
-        let suggested = self.core.applet.suggested_size(true);
-        let img_size = suggested.0 as f32;
+        // Size the cat from the panel's icon size.  The sprites are cropped
+        // to 32x24, so at icon height the cat is drawn larger than it would
+        // be inside a square icon.
+        let (icon, _) = self.core.applet.suggested_size(true);
+        let (pad_major, _) = self.core.applet.suggested_padding(true);
+        let horizontal = self.core.applet.is_horizontal();
+        let aspect = CAT_SIZE as f32 / CAT_CROP_HEIGHT as f32;
+        let (cat_w, cat_h) = if horizontal {
+            let h = icon as f32;
+            (h * aspect, h)
+        } else {
+            let w = icon as f32;
+            (w, w / aspect)
+        };
 
         let cat_image = cosmic::iced::widget::image(handle)
-            .width(Length::Fixed(img_size))
-            .height(Length::Fixed(img_size));
+            .width(Length::Fixed(cat_w))
+            .height(Length::Fixed(cat_h));
 
         // Optionally show a "42%" label next to the cat (CPU mode only)
-        let content: Element<Message> = if self.config.show_percentage
+        let show_pct = self.config.show_percentage
             && self.config.animation_source == AnimationSource::CpuUsage
-            && !self.is_sleeping
-        {
+            && !self.is_sleeping;
+        let content: Element<Message> = if show_pct {
             let pct_num = cosmic::iced::widget::text(format!("{:.0}", self.smoothed_cpu))
                 .font(cosmic::iced::Font::MONOSPACE)
                 .size(11);
@@ -543,7 +558,16 @@ impl cosmic::Application for RunkatApplet {
         let btn = self
             .core
             .applet
-            .button_from_element(content, true)
+            .button_from_element(content, true);
+        // On a horizontal panel the button grows sideways to fit the wide
+        // cat (and the label, when shown).
+        let btn = if horizontal {
+            let content_w = cat_w + if show_pct { 2.0 + PCT_LABEL_WIDTH } else { 0.0 };
+            btn.width(Length::Fixed(content_w + 2.0 * pad_major as f32))
+        } else {
+            btn
+        };
+        let btn = btn
             .on_press_with_rectangle(move |offset, bounds| {
                 if let Some(id) = have_popup {
                     // Popup is open — close it

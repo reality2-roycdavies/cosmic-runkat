@@ -7,10 +7,19 @@ use std::time::Duration;
 // === Animation Constants ===
 
 /// Number of animation frames in the run cycle
-pub const RUN_FRAMES: u8 = 10;
+pub const RUN_FRAMES: u8 = 5;
 
-/// Cat sprite dimensions (square)
+/// Cat sprite dimensions as stored on disk (square)
 pub const CAT_SIZE: u32 = 32;
+
+/// All cat sprites keep their artwork in rows 4..=27 of the 32x32 canvas.
+/// They are cropped to this strip on load so the empty space above and
+/// below doesn't shrink the cat in the panel.
+pub const CAT_CROP_TOP: u32 = 4;
+pub const CAT_CROP_HEIGHT: u32 = 24;
+
+/// Width reserved in the panel for the stacked "42 / %" label
+pub const PCT_LABEL_WIDTH: f32 = 20.0;
 
 // === CPU Monitoring Constants ===
 
