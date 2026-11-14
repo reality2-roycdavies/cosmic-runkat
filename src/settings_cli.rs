@@ -11,15 +11,15 @@ pub fn describe() {
     // Determine dynamic slider range/unit based on animation source
     let (threshold_min, threshold_max, threshold_step, threshold_unit, threshold_value) =
         match config.animation_source {
-            AnimationSource::CpuUsage => (0.0, 30.0, 1.0, "%", config.sleep_threshold_cpu as f64),
+            AnimationSource::CpuUsage => (0.0, 100.0, 1.0, "%", config.sleep_threshold_cpu as f64),
             AnimationSource::Frequency => {
                 (0.0, 10000.0, 100.0, " MHz", config.sleep_threshold_freq as f64)
             }
             AnimationSource::Temperature => {
                 (0.0, 150.0, 1.0, "°C", config.sleep_threshold_temp as f64)
             }
-            AnimationSource::Memory => (0.0, 90.0, 1.0, "%", config.sleep_threshold_mem as f64),
-            AnimationSource::Gpu => (0.0, 30.0, 1.0, "%", config.sleep_threshold_gpu as f64),
+            AnimationSource::Memory => (0.0, 100.0, 1.0, "%", config.sleep_threshold_mem as f64),
+            AnimationSource::Gpu => (0.0, 100.0, 1.0, "%", config.sleep_threshold_gpu as f64),
         };
 
     let source_value = SOURCE_KEYS[AnimationSource::ALL

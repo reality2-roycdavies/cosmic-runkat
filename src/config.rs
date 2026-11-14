@@ -103,7 +103,7 @@ pub enum SpeedCurve {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
     /// Below this CPU usage %, the cat sleeps (CPU mode only).
-    /// Range: 0-30 in the settings slider, but validated 0-100.
+    /// Range: 0-100.
     #[serde(default = "default_cpu_threshold")]
     pub sleep_threshold_cpu: f32,
 
