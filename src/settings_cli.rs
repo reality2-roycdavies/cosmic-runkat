@@ -6,8 +6,13 @@ use crate::config::{AnimationSource, Config, Runner};
 
 /// Output the settings schema as JSON to stdout.
 pub fn describe() {
-    let config = Config::load();
+    let schema = schema(&Config::load());
+    println!("{}", serde_json::to_string_pretty(&schema).unwrap());
+}
 
+/// Build the settings schema for the given config.  The hub reads it again
+/// after every change, so it can depend on the current values.
+fn schema(config: &Config) -> serde_json::Value {
     // Determine dynamic slider range/unit based on animation source
     let (threshold_min, threshold_max, threshold_step, threshold_unit, threshold_value) =
         match config.animation_source {
@@ -33,53 +38,58 @@ pub fn describe() {
             .collect()
     };
 
-    let schema = serde_json::json!({
+    let mut items = vec![
+        serde_json::json!({
+            "type": "select",
+            "key": "runner",
+            "label": "Runner",
+            "value": RUNNER_KEYS[Runner::ALL.iter().position(|&r| r == config.runner).unwrap_or(0)],
+            "options": options(RUNNER_KEYS, Runner::NAMES)
+        }),
+        serde_json::json!({
+            "type": "select",
+            "key": "animation_source",
+            "label": "Monitor",
+            "value": source_value,
+            "options": options(SOURCE_KEYS, AnimationSource::NAMES)
+        }),
+        serde_json::json!({
+            "type": "slider",
+            "key": "sleep_threshold",
+            "label": "Sleep Below",
+            "value": threshold_value,
+            "min": threshold_min,
+            "max": threshold_max,
+            "step": threshold_step,
+            "unit": threshold_unit
+        }),
+    ];
+
+    // The % label is only drawn for percentage sources, so only offer the
+    // toggle for those.  (visible_when can match just one value, so the
+    // item is left out instead.)
+    if config.animation_source.is_percentage() {
+        items.push(serde_json::json!({
+            "type": "toggle",
+            "key": "show_percentage",
+            "label": "Show % on Icon",
+            "value": config.show_percentage
+        }));
+    }
+
+    serde_json::json!({
         "title": "RunKat Settings",
         "description": "The cat runs faster based on the selected metric.",
         "sections": [
             {
                 "title": "Behavior",
-                "items": [
-                    {
-                        "type": "select",
-                        "key": "runner",
-                        "label": "Runner",
-                        "value": RUNNER_KEYS[Runner::ALL.iter().position(|&r| r == config.runner).unwrap_or(0)],
-                        "options": options(RUNNER_KEYS, Runner::NAMES)
-                    },
-                    {
-                        "type": "select",
-                        "key": "animation_source",
-                        "label": "Monitor",
-                        "value": source_value,
-                        "options": options(SOURCE_KEYS, AnimationSource::NAMES)
-                    },
-
-                    {
-                        "type": "slider",
-                        "key": "sleep_threshold",
-                        "label": "Sleep Below",
-                        "value": threshold_value,
-                        "min": threshold_min,
-                        "max": threshold_max,
-                        "step": threshold_step,
-                        "unit": threshold_unit
-                    },
-                    {
-                        "type": "toggle",
-                        "key": "show_percentage",
-                        "label": "Show % on Icon",
-                        "value": config.show_percentage
-                    }
-                ]
+                "items": items
             }
         ],
         "actions": [
             {"id": "reset", "label": "Reset to Defaults", "style": "destructive"}
         ]
-    });
-
-    println!("{}", serde_json::to_string_pretty(&schema).unwrap());
+    })
 }
 
 /// Values used for select options, in the same order as the `ALL` arrays
@@ -157,4 +167,27 @@ pub fn action(id: &str) {
 fn print_response(ok: bool, message: &str) {
     let resp = serde_json::json!({"ok": ok, "message": message});
     println!("{}", resp);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn has_percentage_toggle(source: AnimationSource) -> bool {
+        let config = Config { animation_source: source, ..Config::default() };
+        schema(&config)["sections"][0]["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|item| item["key"] == "show_percentage")
+    }
+
+    #[test]
+    fn percentage_toggle_only_for_percentage_sources() {
+        assert!(has_percentage_toggle(AnimationSource::CpuUsage));
+        assert!(has_percentage_toggle(AnimationSource::Memory));
+        assert!(has_percentage_toggle(AnimationSource::Gpu));
+        assert!(!has_percentage_toggle(AnimationSource::Frequency));
+        assert!(!has_percentage_toggle(AnimationSource::Temperature));
+    }
 }
