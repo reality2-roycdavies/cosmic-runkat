@@ -370,3 +370,94 @@ mod tests {
         assert!((temp.max_temp() - 70.0).abs() < f32::EPSILON);
     }
 }
+
+// ---------------------------------------------------------------------------
+// Memory
+// ---------------------------------------------------------------------------
+
+/// RAM and swap usage read from `/proc/meminfo` (values in KiB).
+#[derive(Clone, Debug, Default)]
+pub struct MemoryInfo {
+    pub total_kb: u64,
+    pub available_kb: u64,
+    pub swap_total_kb: u64,
+    pub swap_free_kb: u64,
+}
+
+impl MemoryInfo {
+    pub fn read() -> Self {
+        fs::read_to_string("/proc/meminfo")
+            .map(|s| Self::parse(&s))
+            .unwrap_or_default()
+    }
+
+    fn parse(content: &str) -> Self {
+        let mut info = Self::default();
+        for line in content.lines() {
+            let mut parts = line.split_whitespace();
+            let (Some(key), Some(value)) = (parts.next(), parts.next()) else {
+                continue;
+            };
+            let Ok(value) = value.parse::<u64>() else { continue };
+            match key {
+                "MemTotal:" => info.total_kb = value,
+                "MemAvailable:" => info.available_kb = value,
+                "SwapTotal:" => info.swap_total_kb = value,
+                "SwapFree:" => info.swap_free_kb = value,
+                _ => {}
+            }
+        }
+        info
+    }
+
+    pub fn used_kb(&self) -> u64 {
+        self.total_kb.saturating_sub(self.available_kb)
+    }
+
+    /// RAM in use as a percentage (0-100)
+    pub fn used_percent(&self) -> f32 {
+        percent(self.used_kb(), self.total_kb)
+    }
+
+    pub fn swap_used_kb(&self) -> u64 {
+        self.swap_total_kb.saturating_sub(self.swap_free_kb)
+    }
+
+    pub fn swap_percent(&self) -> f32 {
+        percent(self.swap_used_kb(), self.swap_total_kb)
+    }
+}
+
+fn percent(part: u64, whole: u64) -> f32 {
+    if whole == 0 {
+        0.0
+    } else {
+        (part as f64 / whole as f64 * 100.0) as f32
+    }
+}
+
+/// Format a KiB amount as GiB with one decimal, e.g. "5.1"
+pub fn kib_to_gib(kb: u64) -> f32 {
+    kb as f32 / 1024.0 / 1024.0
+}
+
+#[cfg(test)]
+mod memory_tests {
+    use super::*;
+
+    #[test]
+    fn parses_meminfo() {
+        let info = MemoryInfo::parse(
+            "MemTotal:       16000000 kB\nMemFree:  1000 kB\nMemAvailable:   12000000 kB\n\
+             SwapTotal:       4000000 kB\nSwapFree:        3000000 kB\n",
+        );
+        assert_eq!(info.used_kb(), 4_000_000);
+        assert!((info.used_percent() - 25.0).abs() < 0.01);
+        assert!((info.swap_percent() - 25.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn empty_meminfo_is_zero_percent() {
+        assert_eq!(MemoryInfo::parse("").used_percent(), 0.0);
+    }
+}

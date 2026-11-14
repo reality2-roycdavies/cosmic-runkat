@@ -16,7 +16,7 @@ use std::path::{Path, PathBuf};
 /// What system metric drives the cat animation speed.
 ///
 /// This enum is stored in the config file as a kebab-case string
-/// (e.g. `"cpu-usage"`, `"frequency"`, `"temperature"`).
+/// (e.g. `"cpu-usage"`, `"frequency"`, `"temperature"`, `"memory"`, `"gpu"`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "kebab-case")]
 pub enum AnimationSource {
@@ -27,6 +27,10 @@ pub enum AnimationSource {
     Frequency,
     /// Cat speed reflects CPU temperature
     Temperature,
+    /// Cat speed reflects RAM usage percentage
+    Memory,
+    /// Cat speed reflects GPU load (busiest GPU)
+    Gpu,
 }
 
 impl AnimationSource {
@@ -35,6 +39,8 @@ impl AnimationSource {
         AnimationSource::CpuUsage,
         AnimationSource::Frequency,
         AnimationSource::Temperature,
+        AnimationSource::Memory,
+        AnimationSource::Gpu,
     ];
 
     /// Human-readable names corresponding to `ALL` — shown in the settings UI
@@ -42,7 +48,51 @@ impl AnimationSource {
         "CPU Usage",
         "CPU Frequency",
         "CPU Temperature",
+        "Memory Usage",
+        "GPU Usage",
     ];
+
+    /// True for sources measured as a plain 0-100% load, which can show
+    /// the percentage label next to the runner.
+    pub fn is_percentage(self) -> bool {
+        matches!(
+            self,
+            AnimationSource::CpuUsage | AnimationSource::Memory | AnimationSource::Gpu
+        )
+    }
+}
+
+/// Which animal runs in the panel.  All runner artwork comes from RunCat365.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "kebab-case")]
+pub enum Runner {
+    #[default]
+    Cat,
+    Horse,
+    Parrot,
+}
+
+impl Runner {
+    pub const ALL: &'static [Runner] = &[Runner::Cat, Runner::Horse, Runner::Parrot];
+    pub const NAMES: &'static [&'static str] = &["Cat", "Horse", "Parrot"];
+
+    pub fn name(self) -> &'static str {
+        Self::NAMES[Self::ALL.iter().position(|&r| r == self).unwrap_or(0)]
+    }
+}
+
+/// How the metric is turned into animation speed.  Set in config.json only
+/// (`"speed_curve": "runcat"` or `"linear"`); not shown in the settings UI.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "kebab-case")]
+pub enum SpeedCurve {
+    /// RunCat365's curve: a slow 2 FPS trot until 5% load, then speed grows
+    /// with load up to a 40 FPS sprint at 100%.
+    #[default]
+    #[serde(rename = "runcat")]
+    RunCat,
+    /// Straight line from `min_fps` at 0% to `max_fps` at 100%.
+    Linear,
 }
 
 /// User-configurable application settings.
@@ -53,7 +103,7 @@ impl AnimationSource {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
     /// Below this CPU usage %, the cat sleeps (CPU mode only).
-    /// Range: 0-30 in the settings slider, but validated 0-100.
+    /// Range: 0-100.
     #[serde(default = "default_cpu_threshold")]
     pub sleep_threshold_cpu: f32,
 
@@ -65,10 +115,18 @@ pub struct Config {
     #[serde(default = "default_temp_threshold")]
     pub sleep_threshold_temp: f32,
 
-    /// Fastest the animation can run (frames per second)
+    /// Below this RAM usage %, the runner sleeps (memory mode only)
+    #[serde(default = "default_mem_threshold")]
+    pub sleep_threshold_mem: f32,
+
+    /// Below this GPU load %, the runner sleeps (GPU mode only)
+    #[serde(default = "default_gpu_threshold")]
+    pub sleep_threshold_gpu: f32,
+
+    /// Fastest the animation can run (frames per second), linear curve only
     pub max_fps: f32,
 
-    /// Slowest the animation can run (frames per second)
+    /// Slowest the animation can run (frames per second), linear curve only
     pub min_fps: f32,
 
     /// Whether to show "42%" next to the cat in CPU usage mode
@@ -77,6 +135,20 @@ pub struct Config {
     /// Which system metric drives the animation and popup display
     #[serde(default)]
     pub animation_source: AnimationSource,
+
+    /// Which animal runs in the panel
+    #[serde(default)]
+    pub runner: Runner,
+
+    /// How the metric maps to animation speed
+    #[serde(default)]
+    pub speed_curve: SpeedCurve,
+
+    /// Command run when the applet is middle-clicked.  Empty means "find a
+    /// system monitor automatically".  Set in config.json only; not shown in
+    /// the settings UI.
+    #[serde(default)]
+    pub middle_click_command: String,
 }
 
 // Default value functions for serde — called when a field is missing from
@@ -84,6 +156,8 @@ pub struct Config {
 fn default_cpu_threshold() -> f32 { 5.0 }
 fn default_freq_threshold() -> f32 { 1000.0 }  // 1 GHz
 fn default_temp_threshold() -> f32 { 40.0 }     // 40 C
+fn default_mem_threshold() -> f32 { 0.0 }       // never sleep on RAM
+fn default_gpu_threshold() -> f32 { 5.0 }
 
 impl Default for Config {
     fn default() -> Self {
@@ -91,10 +165,15 @@ impl Default for Config {
             sleep_threshold_cpu: 5.0,
             sleep_threshold_freq: 1000.0,
             sleep_threshold_temp: 40.0,
+            sleep_threshold_mem: default_mem_threshold(),
+            sleep_threshold_gpu: default_gpu_threshold(),
             max_fps: 15.0,
             min_fps: 2.0,
             show_percentage: true,
             animation_source: AnimationSource::default(),
+            runner: Runner::default(),
+            speed_curve: SpeedCurve::default(),
+            middle_click_command: String::new(),
         }
     }
 }
@@ -108,6 +187,8 @@ impl Config {
             AnimationSource::CpuUsage => self.sleep_threshold_cpu,
             AnimationSource::Frequency => self.sleep_threshold_freq,
             AnimationSource::Temperature => self.sleep_threshold_temp,
+            AnimationSource::Memory => self.sleep_threshold_mem,
+            AnimationSource::Gpu => self.sleep_threshold_gpu,
         }
     }
 
@@ -118,6 +199,8 @@ impl Config {
             AnimationSource::CpuUsage => self.sleep_threshold_cpu = value,
             AnimationSource::Frequency => self.sleep_threshold_freq = value,
             AnimationSource::Temperature => self.sleep_threshold_temp = value,
+            AnimationSource::Memory => self.sleep_threshold_mem = value,
+            AnimationSource::Gpu => self.sleep_threshold_gpu = value,
         }
     }
 
@@ -203,6 +286,15 @@ impl Config {
             ));
         }
 
+        for (name, v) in [
+            ("sleep_threshold_mem", self.sleep_threshold_mem),
+            ("sleep_threshold_gpu", self.sleep_threshold_gpu),
+        ] {
+            if !(0.0..=100.0).contains(&v) {
+                return Err(format!("{name} must be between 0 and 100, got {v}"));
+            }
+        }
+
         if !(MIN_FPS..=MAX_FPS).contains(&self.min_fps) {
             return Err(format!(
                 "min_fps must be between {} and {}, got {}",
@@ -227,13 +319,21 @@ impl Config {
         Ok(())
     }
 
-    /// Calculate how fast the cat should animate based on a 0-100% metric.
+    /// Calculate how fast the runner should animate based on a 0-100% metric.
     ///
-    /// Uses linear interpolation: at 0% -> `min_fps`, at 100% -> `max_fps`.
+    /// - `RunCat`: RunCat365's formula, `2 * max(1, load / 5)` FPS, which is
+    ///   2 FPS up to 5% load and 40 FPS at 100%.
+    /// - `Linear`: at 0% -> `min_fps`, at 100% -> `max_fps`.
+    ///
     /// Values outside 0-100 are clamped.
-    pub fn calculate_fps(&self, cpu_percent: f32) -> f32 {
-        let normalized = (cpu_percent / 100.0).clamp(0.0, 1.0);
-        self.min_fps + normalized * (self.max_fps - self.min_fps)
+    pub fn calculate_fps(&self, percent: f32) -> f32 {
+        let percent = percent.clamp(0.0, 100.0);
+        match self.speed_curve {
+            SpeedCurve::RunCat => 2.0 * (percent / 5.0).max(1.0),
+            SpeedCurve::Linear => {
+                self.min_fps + percent / 100.0 * (self.max_fps - self.min_fps)
+            }
+        }
     }
 }
 
@@ -286,7 +386,8 @@ mod tests {
 
     #[test]
     fn test_fps_calculation() {
-        let config = Config::default();
+        let mut config = Config::default();
+        config.speed_curve = SpeedCurve::Linear;
 
         // At very low CPU, fps should be close to min_fps
         let low_fps = config.calculate_fps(3.0);
@@ -295,6 +396,43 @@ mod tests {
 
         // At 100% CPU = max fps
         assert!((config.calculate_fps(100.0) - config.max_fps).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_runcat_fps_curve() {
+        let config = Config::default();
+        assert_eq!(config.speed_curve, SpeedCurve::RunCat);
+        assert!((config.calculate_fps(0.0) - 2.0).abs() < 0.01);
+        assert!((config.calculate_fps(5.0) - 2.0).abs() < 0.01);
+        assert!((config.calculate_fps(50.0) - 20.0).abs() < 0.01);
+        assert!((config.calculate_fps(100.0) - 40.0).abs() < 0.01);
+        assert!((config.calculate_fps(250.0) - 40.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_old_config_gets_new_defaults() {
+        let old = r#"{"sleep_threshold_cpu": 10.0, "max_fps": 15.0, "min_fps": 2.0,
+                      "show_percentage": false, "animation_source": "cpu-usage"}"#;
+        let config: Config = serde_json::from_str(old).unwrap();
+        assert_eq!(config.runner, Runner::Cat);
+        assert_eq!(config.speed_curve, SpeedCurve::RunCat);
+        assert!(config.middle_click_command.is_empty());
+        assert!(config.validate().is_ok());
+    }
+
+    #[test]
+    fn test_new_fields_round_trip() {
+        let mut config = Config::default();
+        config.runner = Runner::Parrot;
+        config.animation_source = AnimationSource::Gpu;
+        config.speed_curve = SpeedCurve::Linear;
+        let json = serde_json::to_string(&config).unwrap();
+        assert!(json.contains(r#""runner":"parrot""#));
+        assert!(json.contains(r#""animation_source":"gpu""#));
+        assert!(json.contains(r#""speed_curve":"linear""#));
+        let back: Config = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.runner, Runner::Parrot);
+        assert_eq!(back.animation_source, AnimationSource::Gpu);
     }
 
     #[test]

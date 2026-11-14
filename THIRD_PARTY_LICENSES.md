@@ -20,3 +20,17 @@ This project includes the following direct dependencies:
 > [LICENCE file](https://github.com/pop-os/libcosmic/blob/master/LICENSE).
 > The systemstat crate is released under the Unlicense, which dedicates the work
 > to the public domain.
+
+## Artwork
+
+The runner sprites are taken unmodified from
+[RunCat365](https://github.com/runcat-dev/RunCat365) and are licensed under
+the Apache License 2.0. A copy of that licence is in
+`resources/LICENSE-RunCat365`:
+
+- `resources/cat-run-0.png` to `resources/cat-run-4.png`
+- `resources/horse-run-0.png` to `resources/horse-run-4.png`
+- `resources/parrot-run-0.png` to `resources/parrot-run-9.png`
+
+`resources/cat-sleep.png` and `resources/horse-sleep.png` are original
+drawings made in the same style by `tools/draw_sleep_sprites.py`.

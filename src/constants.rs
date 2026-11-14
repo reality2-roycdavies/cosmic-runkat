@@ -6,11 +6,30 @@ use std::time::Duration;
 
 // === Animation Constants ===
 
-/// Number of animation frames in the run cycle
-pub const RUN_FRAMES: u8 = 10;
-
-/// Cat sprite dimensions (square)
+/// Runner sprite dimensions as stored on disk (square)
 pub const CAT_SIZE: u32 = 32;
+
+/// All runner sprites keep their artwork in rows 4..=27 of the 32x32
+/// canvas.  They are cropped to this strip on load so the empty space above
+/// and below doesn't shrink the runner in the panel.
+pub const CAT_CROP_TOP: u32 = 4;
+pub const CAT_CROP_HEIGHT: u32 = 24;
+
+/// Animation tick while running.  40 Hz so the RunCat curve can reach its
+/// 40 FPS top speed.
+pub const RUN_TICK: Duration = Duration::from_millis(25);
+
+/// Animation tick while sleeping (only the floating z's move)
+pub const SLEEP_TICK: Duration = Duration::from_millis(66);
+
+/// Seconds for one "z" to float up from the sleeper's head and fade out
+pub const ZZZ_PERIOD_SECS: f32 = 3.0;
+
+/// How often the NVIDIA GPU is polled through nvidia-smi
+pub const NVIDIA_POLL_INTERVAL: Duration = Duration::from_secs(2);
+
+/// Width reserved in the panel for the stacked "42 / %" label
+pub const PCT_LABEL_WIDTH: f32 = 20.0;
 
 // === CPU Monitoring Constants ===
 
@@ -28,7 +47,7 @@ pub const CPU_SAMPLE_INTERVAL: Duration = Duration::from_millis(500);
 pub const MIN_FPS: f32 = 1.0;
 
 /// Maximum allowed animation FPS
-pub const MAX_FPS: f32 = 30.0;
+pub const MAX_FPS: f32 = 40.0;
 
 // === Popup Sizing Constants ===
 

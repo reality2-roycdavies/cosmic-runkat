@@ -6,10 +6,11 @@
 //!
 //! ## How it works
 //!
-//! 1. **Animation**: Cat sprites are embedded in the binary at compile time.
-//!    A timer ticks ~30 times per second to advance the animation frame.
-//!    The actual animation speed (FPS) is scaled by the chosen metric
-//!    (CPU usage, frequency, or temperature).
+//! 1. **Animation**: Runner sprites (cat, horse, parrot, from RunCat365) are
+//!    embedded in the binary at compile time.  A timer ticks up to 40 times
+//!    per second to advance the animation frame.  The animation speed (FPS)
+//!    is scaled by the chosen metric (CPU usage, frequency, temperature,
+//!    memory or GPU).  While asleep, little z's float up from the runner.
 //!
 //! 2. **Theme integration**: The cat sprite is recolored to match the
 //!    COSMIC desktop accent color. When the user changes their theme,
@@ -21,6 +22,8 @@
 //!
 //! 4. **Settings**: A "Settings" button in the popup spawns a separate
 //!    process (`cosmic-runkat --settings`) to avoid blocking the applet.
+//!
+//! 5. **Middle-click** opens a system monitor (configurable).
 
 use cosmic::app::{Core, Task};
 use cosmic::iced::window::Id;
@@ -30,15 +33,16 @@ use cosmic::surface::action::{app_popup, destroy_popup};
 use cosmic::widget::{self, text};
 use cosmic::Element;
 
-use crate::config::{AnimationSource, Config};
+use crate::config::{AnimationSource, Config, Runner};
 use crate::constants::*;
 use crate::cpu::{CpuMonitor, CpuUsage};
-use crate::sysinfo::{CpuFrequency, CpuTemperature};
+use crate::gpu::{GpuInfo, GpuMonitor};
+use crate::sysinfo::{kib_to_gib, CpuFrequency, CpuTemperature, MemoryInfo};
 use crate::theme;
 
 use image::RgbaImage;
 use std::collections::VecDeque;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 /// Application ID — must match the `.desktop` entry filename so the COSMIC
 /// compositor can associate this process with its applet configuration.
@@ -76,103 +80,131 @@ pub enum Message {
 
     /// User clicked the "Settings" button in the popup.
     OpenSettings,
+
+    /// User middle-clicked the applet: open a system monitor.
+    MiddleClick,
 }
 
 // ---------------------------------------------------------------------------
-// Sprite cache — manages the cat animation frames
+// Runner artwork
 // ---------------------------------------------------------------------------
 
-/// Holds both the original (white) sprites and the theme-recolored versions.
-///
-/// We keep the originals around because when the user changes their desktop
-/// theme, we need to recolor from the *original* white sprites — recoloring
-/// already-colored sprites would lose detail.
+/// Embedded artwork for one runner, plus where its sleep z's float.
+struct RunnerArt {
+    run: &'static [&'static [u8]],
+    sleep: &'static [u8],
+    /// Start and end of the z's path (top-left of each "z"), in pixels of
+    /// the cropped 32x24 sprite.  Starts just above the sleeping head.
+    zzz_from: (f32, f32),
+    zzz_to: (f32, f32),
+}
+
+fn runner_art(runner: Runner) -> RunnerArt {
+    match runner {
+        // Run frames: RunCat365 (Apache-2.0).  Sleep sprite: tools/draw_sleep_sprites.py
+        Runner::Cat => RunnerArt {
+            run: &[
+                include_bytes!("../resources/cat-run-0.png"),
+                include_bytes!("../resources/cat-run-1.png"),
+                include_bytes!("../resources/cat-run-2.png"),
+                include_bytes!("../resources/cat-run-3.png"),
+                include_bytes!("../resources/cat-run-4.png"),
+            ],
+            sleep: include_bytes!("../resources/cat-sleep.png"),
+            zzz_from: (15.5, 7.0),
+            zzz_to: (9.0, -0.5),
+        },
+        // Run frames: RunCat365 (Apache-2.0).  Sleep sprite: tools/draw_sleep_sprites.py
+        Runner::Horse => RunnerArt {
+            run: &[
+                include_bytes!("../resources/horse-run-0.png"),
+                include_bytes!("../resources/horse-run-1.png"),
+                include_bytes!("../resources/horse-run-2.png"),
+                include_bytes!("../resources/horse-run-3.png"),
+                include_bytes!("../resources/horse-run-4.png"),
+            ],
+            sleep: include_bytes!("../resources/horse-sleep.png"),
+            zzz_from: (13.0, 5.5),
+            zzz_to: (6.5, -0.5),
+        },
+        // RunCat365 (Apache-2.0).  Sleeps in the head-down frame of its bob.
+        Runner::Parrot => RunnerArt {
+            run: &[
+                include_bytes!("../resources/parrot-run-0.png"),
+                include_bytes!("../resources/parrot-run-1.png"),
+                include_bytes!("../resources/parrot-run-2.png"),
+                include_bytes!("../resources/parrot-run-3.png"),
+                include_bytes!("../resources/parrot-run-4.png"),
+                include_bytes!("../resources/parrot-run-5.png"),
+                include_bytes!("../resources/parrot-run-6.png"),
+                include_bytes!("../resources/parrot-run-7.png"),
+                include_bytes!("../resources/parrot-run-8.png"),
+                include_bytes!("../resources/parrot-run-9.png"),
+            ],
+            sleep: include_bytes!("../resources/parrot-run-6.png"),
+            zzz_from: (7.5, 5.0),
+            zzz_to: (1.5, -0.5),
+        },
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Sprite cache — the current runner's frames, tinted and ready to draw
+// ---------------------------------------------------------------------------
+
+type Handle = cosmic::iced::widget::image::Handle;
+
+/// Tinted, ready-to-render frames for the selected runner.  Rebuilt from
+/// the embedded PNGs whenever the runner or the theme color changes.
 struct SpriteCache {
-    /// Original white sprites loaded once from embedded PNGs at startup.
-    cat_frames_original: Vec<RgbaImage>,
-    cat_sleep_original: RgbaImage,
-
-    /// Theme-colored copies — these are what actually get rendered.
-    cat_frames_colored: Vec<RgbaImage>,
-    cat_sleep_colored: RgbaImage,
-
-    /// The last color we applied.  If the theme color hasn't changed,
-    /// we skip the (relatively expensive) recoloring step.
-    last_theme_color: Option<(u8, u8, u8)>,
+    runner: Runner,
+    color: (u8, u8, u8),
+    art: RunnerArt,
+    run: Vec<Handle>,
+    /// Tinted sleep pose without z's
+    sleep_base: RgbaImage,
+    /// Sleep pose with the z's at their latest position
+    sleep: Handle,
 }
 
 impl SpriteCache {
-    /// Load all cat sprites from PNGs embedded in the binary via
-    /// `include_bytes!`.  Each frame is stored twice — once as the
-    /// original (for future recoloring) and once as the current colored
-    /// version.
-    fn load() -> Self {
-        // Helper closure: try to decode a PNG byte slice into an RGBA image
-        let load_img = |data: &[u8]| -> Option<RgbaImage> {
-            image::load_from_memory(data).ok().map(|i| i.to_rgba8())
+    fn new(runner: Runner, color: (u8, u8, u8)) -> Self {
+        let art = runner_art(runner);
+        let load = |data: &[u8]| -> RgbaImage {
+            let img = image::load_from_memory(data)
+                .map(|i| i.to_rgba8())
+                // If a PNG fails to decode, substitute a simple grey circle
+                .unwrap_or_else(|_| create_fallback_icon(CAT_SIZE));
+            tint(&crop_sprite(&img), color)
         };
-
-        // Load the sleeping cat sprite (single frame)
-        let cat_sleep = load_img(include_bytes!("../resources/cat-sleep.png"))
-            .unwrap_or_else(|| create_fallback_icon(CAT_SIZE));
-
-        // Load all 10 running animation frames
-        let cat_frames: Vec<RgbaImage> = vec![
-            load_img(include_bytes!("../resources/cat-run-0.png")),
-            load_img(include_bytes!("../resources/cat-run-1.png")),
-            load_img(include_bytes!("../resources/cat-run-2.png")),
-            load_img(include_bytes!("../resources/cat-run-3.png")),
-            load_img(include_bytes!("../resources/cat-run-4.png")),
-            load_img(include_bytes!("../resources/cat-run-5.png")),
-            load_img(include_bytes!("../resources/cat-run-6.png")),
-            load_img(include_bytes!("../resources/cat-run-7.png")),
-            load_img(include_bytes!("../resources/cat-run-8.png")),
-            load_img(include_bytes!("../resources/cat-run-9.png")),
-        ]
-        .into_iter()
-        // If any PNG fails to load, substitute a simple grey circle
-        .map(|opt| opt.unwrap_or_else(|| create_fallback_icon(CAT_SIZE)))
-        .collect();
-
-        // Clone originals into the "colored" slots — they'll be recolored
-        // immediately in init() when we know the theme accent color.
-        Self {
-            cat_frames_original: cat_frames.clone(),
-            cat_sleep_original: cat_sleep.clone(),
-            cat_frames_colored: cat_frames,
-            cat_sleep_colored: cat_sleep,
-            last_theme_color: None,
-        }
+        let run = art.run.iter().map(|d| rgba_to_handle(&load(d))).collect();
+        let sleep_base = load(art.sleep);
+        let sleep = rgba_to_handle(&sleep_base);
+        Self { runner, color, art, run, sleep_base, sleep }
     }
 
-    /// Recolor all sprites to match the given RGB accent color.
-    /// Does nothing if the color hasn't changed since last call.
-    fn update_colors(&mut self, color: (u8, u8, u8)) {
-        if self.last_theme_color == Some(color) {
-            return; // color unchanged — skip expensive pixel work
+    /// Rebuild if the runner or color changed.  Returns true if it did.
+    fn ensure(&mut self, runner: Runner, color: (u8, u8, u8)) -> bool {
+        if self.runner == runner && self.color == color {
+            return false;
         }
-
-        // Recolor every running frame from the *original* white sprites
-        self.cat_frames_colored = self
-            .cat_frames_original
-            .iter()
-            .map(|img| recolor_image(img, color))
-            .collect();
-
-        self.cat_sleep_colored = recolor_image(&self.cat_sleep_original, color);
-        self.last_theme_color = Some(color);
+        *self = Self::new(runner, color);
+        true
     }
 
-    /// Return the appropriate frame as an iced image handle, ready to render.
-    /// If `sleeping` is true, returns the sleep sprite instead of a run frame.
-    fn frame_handle(&self, frame: u8, sleeping: bool) -> cosmic::iced::widget::image::Handle {
-        let img = if sleeping {
-            &self.cat_sleep_colored
-        } else {
-            // Wrap the frame index so it stays within bounds
-            &self.cat_frames_colored[frame as usize % self.cat_frames_colored.len()]
-        };
-        rgba_to_handle(img)
+    fn frame_count(&self) -> usize {
+        self.run.len()
+    }
+
+    fn run_frame(&self, frame: usize) -> Handle {
+        self.run[frame % self.run.len()].clone()
+    }
+
+    /// Redraw the sleep pose with the z's at time `t` seconds into the nap.
+    fn animate_sleep(&mut self, t: f32) {
+        let mut img = self.sleep_base.clone();
+        draw_zzz(&mut img, &self.art, t, self.color);
+        self.sleep = rgba_to_handle(&img);
     }
 }
 
@@ -180,20 +212,80 @@ impl SpriteCache {
 // Image utility functions
 // ---------------------------------------------------------------------------
 
-/// Replace every non-transparent pixel's color with `(r, g, b)`,
-/// preserving the original alpha channel.  This is how we "tint"
-/// the white cat sprites to match the user's accent color.
-fn recolor_image(img: &RgbaImage, (r, g, b): (u8, u8, u8)) -> RgbaImage {
+/// Cut a 32x32 sprite down to the strip that actually holds the runner.
+fn crop_sprite(img: &RgbaImage) -> RgbaImage {
+    let top = CAT_CROP_TOP.min(img.height());
+    let height = CAT_CROP_HEIGHT.min(img.height() - top);
+    image::imageops::crop_imm(img, 0, top, img.width(), height).to_image()
+}
+
+/// Paint a sprite in the theme color.  Dark pixels become solid color and
+/// light pixels become see-through, so a black silhouette keeps its soft
+/// edges and the parrot's white eye and beak still show up as details.
+fn tint(img: &RgbaImage, (r, g, b): (u8, u8, u8)) -> RgbaImage {
     let mut result = img.clone();
     for pixel in result.pixels_mut() {
-        if pixel[3] > 0 {
-            // pixel[3] is the alpha channel — 0 means fully transparent
-            pixel[0] = r;
-            pixel[1] = g;
-            pixel[2] = b;
-        }
+        let [pr, pg, pb, pa] = pixel.0;
+        let lum = (0.299 * pr as f32 + 0.587 * pg as f32 + 0.114 * pb as f32) / 255.0;
+        let alpha = (pa as f32 * (1.0 - lum)).round() as u8;
+        *pixel = image::Rgba([r, g, b, alpha]);
     }
     result
+}
+
+/// Draw the floating z's onto a sleeping sprite.  Three z's are spaced
+/// evenly through the cycle; each rises from `zzz_from` to `zzz_to`,
+/// growing a little, fading in at the start and out near the top.
+fn draw_zzz(img: &mut RgbaImage, art: &RunnerArt, t: f32, color: (u8, u8, u8)) {
+    for k in 0..3 {
+        let phase = (t / ZZZ_PERIOD_SECS + k as f32 / 3.0).fract();
+        let x = art.zzz_from.0 + (art.zzz_to.0 - art.zzz_from.0) * phase;
+        let y = art.zzz_from.1 + (art.zzz_to.1 - art.zzz_from.1) * phase;
+        let size = 2.0 + 1.4 * phase;
+        let opacity = (phase / 0.15).min(1.0) * ((1.0 - phase) / 0.4).min(1.0);
+        let (x1, y1) = (x + size, y + size);
+        for (a, b) in [((x, y), (x1, y)), ((x1, y), (x, y1)), ((x, y1), (x1, y1))] {
+            stamp_segment(img, a, b, 0.9, opacity, color);
+        }
+    }
+}
+
+/// Draw an anti-aliased line segment of the given width, blending over the
+/// existing pixels.
+fn stamp_segment(
+    img: &mut RgbaImage,
+    (ax, ay): (f32, f32),
+    (bx, by): (f32, f32),
+    width: f32,
+    opacity: f32,
+    (r, g, b): (u8, u8, u8),
+) {
+    if opacity <= 0.0 {
+        return;
+    }
+    let pad = width / 2.0 + 1.0;
+    let x0 = (ax.min(bx) - pad).floor().max(0.0) as u32;
+    let y0 = (ay.min(by) - pad).floor().max(0.0) as u32;
+    let x1 = ((ax.max(bx) + pad).ceil().max(0.0) as u32).min(img.width());
+    let y1 = ((ay.max(by) + pad).ceil().max(0.0) as u32).min(img.height());
+    let (dx, dy) = (bx - ax, by - ay);
+    let len2 = (dx * dx + dy * dy).max(f32::EPSILON);
+    for py in y0..y1 {
+        for px in x0..x1 {
+            let (cx, cy) = (px as f32 + 0.5, py as f32 + 0.5);
+            let t = (((cx - ax) * dx + (cy - ay) * dy) / len2).clamp(0.0, 1.0);
+            let (qx, qy) = (ax + t * dx - cx, ay + t * dy - cy);
+            let dist = (qx * qx + qy * qy).sqrt();
+            let cover = (width / 2.0 + 0.5 - dist).clamp(0.0, 1.0) * opacity;
+            if cover <= 0.0 {
+                continue;
+            }
+            let pixel = img.get_pixel_mut(px, py);
+            let dst = pixel.0[3] as f32 / 255.0;
+            let out = cover + dst * (1.0 - cover);
+            *pixel = image::Rgba([r, g, b, (out * 255.0).round() as u8]);
+        }
+    }
 }
 
 /// Convert an in-memory RGBA image into an iced `Handle` that the GUI
@@ -234,16 +326,18 @@ pub struct RunkatApplet {
     /// COSMIC framework core — provides access to applet helpers, window IDs, etc.
     core: Core,
 
-    /// Pre-loaded and theme-colored cat sprites
+    /// The selected runner's frames, tinted to the theme
     sprites: SpriteCache,
 
     // --- Animation state ---
-    /// Which run-cycle frame we're currently showing (0..9)
-    current_frame: u8,
+    /// Which run-cycle frame we're currently showing
+    current_frame: usize,
     /// True when the monitored metric is below the sleep threshold
     is_sleeping: bool,
     /// When we last advanced the frame — used to control actual FPS
-    last_frame_time: std::time::Instant,
+    last_frame_time: Instant,
+    /// When the current nap started — drives the floating z's
+    sleep_started: Instant,
 
     // --- System metrics ---
     /// Background thread that reads CPU usage via systemstat
@@ -254,6 +348,14 @@ pub struct RunkatApplet {
     cpu_frequency: CpuFrequency,
     /// Latest CPU temperature readings from hwmon
     cpu_temperature: CpuTemperature,
+    /// Latest RAM / swap usage
+    memory: MemoryInfo,
+    /// Background thread polling GPU load (only while GPU is the source)
+    gpu_monitor: GpuMonitor,
+    /// Latest GPU readings
+    gpu_info: GpuInfo,
+    /// Smoothed load of the busiest GPU
+    smoothed_gpu: f32,
 
     // --- CPU smoothing ---
     /// Rolling window of recent CPU samples for averaging
@@ -304,11 +406,10 @@ impl cosmic::Application for RunkatApplet {
     /// CPU monitoring thread, reads initial sensor data, and loads config.
     fn init(core: Core, _flags: Self::Flags) -> (Self, Task<Self::Message>) {
         let config = Config::load();
-        let mut sprites = SpriteCache::load();
 
-        // Read the COSMIC theme's accent color and recolor sprites to match
+        // Read the COSMIC theme's accent color and tint the sprites to match
         let theme_colors = theme::get_cosmic_theme_colors();
-        sprites.update_colors(theme_colors.foreground);
+        let sprites = SpriteCache::new(config.runner, theme_colors.foreground);
 
         // Start the background CPU monitoring thread
         let cpu_monitor = CpuMonitor::new();
@@ -319,11 +420,16 @@ impl cosmic::Application for RunkatApplet {
             sprites,
             current_frame: 0,
             is_sleeping: true, // start sleeping until we get real data
-            last_frame_time: std::time::Instant::now(),
+            last_frame_time: Instant::now(),
+            sleep_started: Instant::now(),
             cpu_monitor,
             cpu_usage: CpuUsage::default(),
             cpu_frequency: CpuFrequency::read(),
             cpu_temperature: CpuTemperature::read(),
+            memory: MemoryInfo::read(),
+            gpu_monitor: GpuMonitor::start(),
+            gpu_info: GpuInfo::default(),
+            smoothed_gpu: 0.0,
             cpu_samples: VecDeque::with_capacity(CPU_SAMPLE_COUNT),
             smoothed_cpu: 0.0,
             config,
@@ -353,40 +459,30 @@ impl cosmic::Application for RunkatApplet {
             // 2. Determine if the cat should be sleeping (metric below threshold)
             // 3. If awake, advance the animation frame at the calculated FPS
             Message::AnimationTick => {
-                let (metric, sleeping) = match self.config.animation_source {
-                    AnimationSource::CpuUsage => {
-                        let m = self.smoothed_cpu;
-                        // Sleep when CPU usage is below the configured threshold
-                        (m, m < self.config.sleep_threshold_cpu)
-                    }
-                    AnimationSource::Frequency => {
-                        // Use percentage for animation speed, but compare
-                        // absolute MHz against threshold for sleep decision
-                        let metric = self.cpu_frequency.average_percentage();
-                        let avg_mhz = self.cpu_frequency.average_mhz() as f32;
-                        (metric, avg_mhz < self.config.sleep_threshold_freq)
-                    }
-                    AnimationSource::Temperature => {
-                        // Use percentage of critical temp for animation speed,
-                        // but compare actual degrees for sleep decision
-                        let actual = self.cpu_temperature.max_temp();
-                        let metric = self.cpu_temperature.percentage();
-                        (metric, actual < self.config.sleep_threshold_temp)
-                    }
-                };
+                let (metric, sleeping) = self.current_metric();
 
+                if sleeping && !self.is_sleeping {
+                    self.sleep_started = Instant::now();
+                }
                 self.is_sleeping = sleeping;
 
-                // Only advance animation frames when the cat is awake
-                if !sleeping {
-                    let fps = self.config.calculate_fps(metric);
-                    if fps > 0.0 {
-                        // Calculate how long each frame should be shown
-                        let frame_duration = Duration::from_secs_f32(1.0 / fps);
-                        if self.last_frame_time.elapsed() >= frame_duration {
-                            // Wrap around: frame 0, 1, 2, ..., 9, 0, 1, ...
-                            self.current_frame = (self.current_frame + 1) % RUN_FRAMES;
-                            self.last_frame_time = std::time::Instant::now();
+                if sleeping {
+                    // Only the z's move while asleep
+                    self.sprites
+                        .animate_sleep(self.sleep_started.elapsed().as_secs_f32());
+                } else {
+                    let fps = self.config.calculate_fps(metric).max(0.1);
+                    let frame = Duration::from_secs_f32(1.0 / fps);
+                    let elapsed = self.last_frame_time.elapsed();
+                    if elapsed >= frame {
+                        // At high FPS more than one frame can pass per tick
+                        let steps = (elapsed.as_secs_f32() / frame.as_secs_f32()) as u32;
+                        self.current_frame = (self.current_frame + steps as usize)
+                            % self.sprites.frame_count();
+                        self.last_frame_time += frame * steps;
+                        // After a pause (e.g. waking up), don't try to catch up
+                        if self.last_frame_time.elapsed() > frame {
+                            self.last_frame_time = Instant::now();
                         }
                     }
                 }
@@ -415,6 +511,16 @@ impl cosmic::Application for RunkatApplet {
                 // Also refresh frequency and temperature (read directly from sysfs)
                 self.cpu_frequency = CpuFrequency::read();
                 self.cpu_temperature = CpuTemperature::read();
+                self.memory = MemoryInfo::read();
+
+                // GPU is only polled while it is the selected source
+                let gpu_active = self.config.animation_source == AnimationSource::Gpu;
+                self.gpu_monitor.set_active(gpu_active);
+                if gpu_active {
+                    self.gpu_info = self.gpu_monitor.current();
+                    let busy = self.gpu_info.max_busy();
+                    self.smoothed_gpu += (busy - self.smoothed_gpu) * 0.4;
+                }
 
                 // Update the hover tooltip text
                 self.tooltip = self.make_tooltip();
@@ -435,8 +541,13 @@ impl cosmic::Application for RunkatApplet {
                 {
                     self.accent_color = theme_colors.foreground;
                     self.theme_is_dark = theme_colors.is_dark;
-                    // Re-tint all sprites to match the new accent color
-                    self.sprites.update_colors(theme_colors.foreground);
+                }
+
+                // Re-tint on theme change, reload on runner change
+                if self.sprites.ensure(self.config.runner, self.accent_color) {
+                    self.current_frame %= self.sprites.frame_count();
+                    self.sprites
+                        .animate_sleep(self.sleep_started.elapsed().as_secs_f32());
                 }
             }
 
@@ -481,6 +592,11 @@ impl cosmic::Application for RunkatApplet {
                     }
                 });
             }
+
+            Message::MiddleClick => {
+                let custom = self.config.middle_click_command.trim().to_string();
+                std::thread::spawn(move || launch_system_monitor(&custom));
+            }
         }
 
         Task::none()
@@ -490,8 +606,8 @@ impl cosmic::Application for RunkatApplet {
     /// the messages that drive the applet's update loop.
     fn subscription(&self) -> cosmic::iced::Subscription<Self::Message> {
         cosmic::iced::Subscription::batch([
-            // ~30 FPS animation tick
-            cosmic::iced::time::every(Duration::from_millis(33))
+            // Animation tick: fast while running, slow while only z's move
+            cosmic::iced::time::every(if self.is_sleeping { SLEEP_TICK } else { RUN_TICK })
                 .map(|_| Message::AnimationTick),
             // CPU / sensor data refresh
             cosmic::iced::time::every(Duration::from_millis(500))
@@ -505,23 +621,38 @@ impl cosmic::Application for RunkatApplet {
     /// Build the panel button widget.  This is what the user sees in the
     /// COSMIC panel — a small animated cat image with an optional CPU% label.
     fn view(&self) -> Element<'_, Message> {
-        // Get the current cat frame as a renderable image handle
-        let handle = self.sprites.frame_handle(self.current_frame, self.is_sleeping);
+        // Current frame as a renderable image handle
+        let handle = if self.is_sleeping {
+            self.sprites.sleep.clone()
+        } else {
+            self.sprites.run_frame(self.current_frame)
+        };
 
-        // Ask the COSMIC applet framework for the suggested icon size
-        let suggested = self.core.applet.suggested_size(true);
-        let img_size = suggested.0 as f32;
+        // Size the cat from the panel's icon size.  The sprites are cropped
+        // to 32x24, so at icon height the cat is drawn larger than it would
+        // be inside a square icon.
+        let (icon, _) = self.core.applet.suggested_size(true);
+        let (pad_major, _) = self.core.applet.suggested_padding(true);
+        let horizontal = self.core.applet.is_horizontal();
+        let aspect = CAT_SIZE as f32 / CAT_CROP_HEIGHT as f32;
+        let (cat_w, cat_h) = if horizontal {
+            let h = icon as f32;
+            (h * aspect, h)
+        } else {
+            let w = icon as f32;
+            (w, w / aspect)
+        };
 
         let cat_image = cosmic::iced::widget::image(handle)
-            .width(Length::Fixed(img_size))
-            .height(Length::Fixed(img_size));
+            .width(Length::Fixed(cat_w))
+            .height(Length::Fixed(cat_h));
 
-        // Optionally show a "42%" label next to the cat (CPU mode only)
-        let content: Element<Message> = if self.config.show_percentage
-            && self.config.animation_source == AnimationSource::CpuUsage
-            && !self.is_sleeping
-        {
-            let pct_num = cosmic::iced::widget::text(format!("{:.0}", self.smoothed_cpu))
+        // Optionally show a "42%" label next to the runner (% sources only)
+        let show_pct = self.config.show_percentage
+            && self.config.animation_source.is_percentage()
+            && !self.is_sleeping;
+        let content: Element<Message> = if show_pct {
+            let pct_num = cosmic::iced::widget::text(format!("{:.0}", self.current_metric().0))
                 .font(cosmic::iced::Font::MONOSPACE)
                 .size(11);
             let pct_sym = cosmic::iced::widget::text("%")
@@ -537,13 +668,24 @@ impl cosmic::Application for RunkatApplet {
         } else {
             cat_image.into()
         };
+        // Middle-click opens a system monitor; left-click still reaches the button
+        let content = cosmic::iced::widget::mouse_area(content).on_middle_press(Message::MiddleClick);
 
         // Wrap in an applet button that toggles the popup on click
         let have_popup = self.popup;
         let btn = self
             .core
             .applet
-            .button_from_element(content, true)
+            .button_from_element(content, true);
+        // On a horizontal panel the button grows sideways to fit the wide
+        // cat (and the label, when shown).
+        let btn = if horizontal {
+            let content_w = cat_w + if show_pct { 2.0 + PCT_LABEL_WIDTH } else { 0.0 };
+            btn.width(Length::Fixed(content_w + 2.0 * pad_major as f32))
+        } else {
+            btn
+        };
+        let btn = btn
             .on_press_with_rectangle(move |offset, bounds| {
                 if let Some(id) = have_popup {
                     // Popup is open — close it
@@ -559,14 +701,18 @@ impl cosmic::Application for RunkatApplet {
                             let new_id = Id::unique();
                             state.popup = Some(new_id);
 
-                            // Size the popup to fit the number of CPU cores
+                            // Size the popup to fit the rows it will show
                             let core_count = state.cpu_usage.per_core.len().max(
                                 state.cpu_frequency.per_core.len().max(
                                     state.cpu_temperature.per_core.len(),
                                 ),
                             );
-                            let visible_rows =
-                                (core_count as u32 + 1).min(POPUP_MAX_ROWS);
+                            let rows = match state.config.animation_source {
+                                AnimationSource::Memory => 2,
+                                AnimationSource::Gpu => 3 * state.gpu_info.gpus.len().max(1),
+                                _ => core_count + 1,
+                            };
+                            let visible_rows = (rows as u32).min(POPUP_MAX_ROWS);
                             let popup_height =
                                 POPUP_BASE_HEIGHT + visible_rows * POPUP_ROW_HEIGHT;
 
@@ -638,6 +784,37 @@ impl cosmic::Application for RunkatApplet {
 // ---------------------------------------------------------------------------
 
 impl RunkatApplet {
+    /// The selected metric as a 0-100 value for speed, and whether the
+    /// runner should be asleep.
+    fn current_metric(&self) -> (f32, bool) {
+        match self.config.animation_source {
+            AnimationSource::CpuUsage => {
+                let m = self.smoothed_cpu;
+                (m, m < self.config.sleep_threshold_cpu)
+            }
+            AnimationSource::Frequency => {
+                // Speed from % of max frequency, sleep on absolute MHz
+                let metric = self.cpu_frequency.average_percentage();
+                let avg_mhz = self.cpu_frequency.average_mhz() as f32;
+                (metric, avg_mhz < self.config.sleep_threshold_freq)
+            }
+            AnimationSource::Temperature => {
+                // Speed from % of critical temp, sleep on actual degrees
+                let actual = self.cpu_temperature.max_temp();
+                let metric = self.cpu_temperature.percentage();
+                (metric, actual < self.config.sleep_threshold_temp)
+            }
+            AnimationSource::Memory => {
+                let m = self.memory.used_percent();
+                (m, m < self.config.sleep_threshold_mem)
+            }
+            AnimationSource::Gpu => {
+                let m = self.smoothed_gpu;
+                (m, m < self.config.sleep_threshold_gpu)
+            }
+        }
+    }
+
     /// Generate a short tooltip string like "CPU: 42%" or "CPU: 3200 MHz"
     fn make_tooltip(&self) -> String {
         match self.config.animation_source {
@@ -648,6 +825,13 @@ impl RunkatApplet {
             AnimationSource::Temperature => {
                 format!("CPU: {:.1}\u{00b0}C", self.cpu_temperature.max_temp())
             }
+            AnimationSource::Memory => format!(
+                "RAM: {:.0}% ({:.1} / {:.1} GiB)",
+                self.memory.used_percent(),
+                kib_to_gib(self.memory.used_kb()),
+                kib_to_gib(self.memory.total_kb),
+            ),
+            AnimationSource::Gpu => format!("GPU: {:.0}%", self.smoothed_gpu),
         }
     }
 
@@ -663,6 +847,8 @@ impl RunkatApplet {
             AnimationSource::CpuUsage => "CPU Usage",
             AnimationSource::Frequency => "CPU Frequency",
             AnimationSource::Temperature => "CPU Temperature",
+            AnimationSource::Memory => "Memory Usage",
+            AnimationSource::Gpu => "GPU Usage",
         };
 
         let title_row = row![
@@ -772,35 +958,86 @@ impl RunkatApplet {
 
                 temp_column.into()
             }
+
+            AnimationSource::Memory => {
+                let m = &self.memory;
+                let gib = |used: u64, total: u64| {
+                    format!("{:.1} / {:.1} GiB", kib_to_gib(used), kib_to_gib(total))
+                };
+                let mut col = column![row![
+                    text::caption("RAM:").width(Length::Fixed(80.0)),
+                    self.progress_bar(m.used_percent(), 100.0, false),
+                    text::caption(gib(m.used_kb(), m.total_kb)).width(Length::Fixed(110.0)),
+                ]
+                .spacing(8)
+                .align_y(Alignment::Center)]
+                .spacing(4);
+                if m.swap_total_kb > 0 {
+                    col = col.push(
+                        row![
+                            text::caption("Swap:").width(Length::Fixed(80.0)),
+                            self.progress_bar(m.swap_percent(), 100.0, false),
+                            text::caption(gib(m.swap_used_kb(), m.swap_total_kb))
+                                .width(Length::Fixed(110.0)),
+                        ]
+                        .spacing(8)
+                        .align_y(Alignment::Center),
+                    );
+                }
+                col.into()
+            }
+
+            AnimationSource::Gpu => {
+                let mut col = column![].spacing(4);
+                if self.gpu_info.gpus.is_empty() {
+                    col = col.push(text::caption("Looking for GPUs..."));
+                }
+                for gpu in &self.gpu_info.gpus {
+                    col = col.push(text::caption(gpu.name.clone()));
+                    let load: Element<'_, Message> = match (gpu.asleep, gpu.busy) {
+                        (true, _) => text::caption("Powered down (not polled)").into(),
+                        (false, Some(busy)) => row![
+                            text::caption("Load:").width(Length::Fixed(80.0)),
+                            self.progress_bar(busy, 100.0, false),
+                            text::caption(format!("{:5.1}%", busy)).width(Length::Fixed(110.0)),
+                        ]
+                        .spacing(8)
+                        .align_y(Alignment::Center)
+                        .into(),
+                        (false, None) => text::caption("Load not available").into(),
+                    };
+                    col = col.push(load);
+                    if let (Some(used), Some(total)) = (gpu.vram_used_mb, gpu.vram_total_mb) {
+                        col = col.push(
+                            row![
+                                text::caption("VRAM:").width(Length::Fixed(80.0)),
+                                self.progress_bar(used as f32, total as f32, false),
+                                text::caption(format!("{} / {} MB", used, total))
+                                    .width(Length::Fixed(110.0)),
+                            ]
+                            .spacing(8)
+                            .align_y(Alignment::Center),
+                        );
+                    }
+                }
+                col.into()
+            }
         };
 
-        // Fun status text describing the cat's current state
+        // Fun status text describing the runner's current state
+        let name = self.config.runner.name();
         let status_text = match self.config.animation_source {
-            AnimationSource::CpuUsage => {
-                if self.cpu_usage.aggregate < self.config.sleep_threshold_cpu {
-                    "Cat is sleeping..."
-                } else {
-                    "Cat is running!"
-                }
+            AnimationSource::Frequency if self.is_sleeping => format!("{name} is idle..."),
+            AnimationSource::Frequency => format!("{name} is boosting!"),
+            AnimationSource::Temperature if self.is_sleeping => format!("{name} is cool..."),
+            AnimationSource::Temperature
+                if self.cpu_temperature.max_temp() > TEMP_HOT_THRESHOLD =>
+            {
+                format!("{name} is HOT!")
             }
-            AnimationSource::Frequency => {
-                let avg_mhz = self.cpu_frequency.average_mhz() as f32;
-                if avg_mhz < self.config.sleep_threshold_freq {
-                    "Cat is idle..."
-                } else {
-                    "Cat is boosting!"
-                }
-            }
-            AnimationSource::Temperature => {
-                let max_temp = self.cpu_temperature.max_temp();
-                if max_temp < self.config.sleep_threshold_temp {
-                    "Cat is cool..."
-                } else if max_temp > TEMP_HOT_THRESHOLD {
-                    "Cat is HOT!"
-                } else {
-                    "Cat is warm..."
-                }
-            }
+            AnimationSource::Temperature => format!("{name} is warm..."),
+            _ if self.is_sleeping => format!("{name} is sleeping..."),
+            _ => format!("{name} is running!"),
         };
 
         let bottom_row = row![
@@ -908,6 +1145,73 @@ impl RunkatApplet {
                 ..Default::default()
             })
             .into()
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Middle-click: system monitor launcher
+// ---------------------------------------------------------------------------
+
+/// Graphical system monitors, in order of preference
+const GUI_MONITORS: &[&str] = &[
+    "missioncenter",
+    "mission-center",
+    "gnome-system-monitor",
+    "observatory",
+    "resources",
+    "plasma-systemmonitor",
+];
+
+/// Terminal system monitors, run inside a terminal if no GUI one exists
+const TUI_MONITORS: &[&str] = &["btop", "htop", "top"];
+
+/// Terminals and the flag that makes them run a command
+const TERMINALS: &[(&str, &[&str])] = &[
+    ("cosmic-term", &["-e"]),
+    ("x-terminal-emulator", &["-e"]),
+    ("gnome-terminal", &["--"]),
+    ("konsole", &["-e"]),
+    ("alacritty", &["-e"]),
+    ("kitty", &[]),
+    ("foot", &[]),
+];
+
+fn in_path(program: &str) -> bool {
+    std::env::var_os("PATH").is_some_and(|paths| {
+        std::env::split_paths(&paths).any(|dir| dir.join(program).is_file())
+    })
+}
+
+/// The command middle-click runs: the user's own if set, otherwise the
+/// first GUI system monitor found, otherwise a terminal monitor in a terminal.
+fn system_monitor_command(custom: &str) -> Option<std::process::Command> {
+    use std::process::Command;
+    if !custom.is_empty() {
+        let mut cmd = Command::new("sh");
+        cmd.args(["-c", custom]);
+        return Some(cmd);
+    }
+    if let Some(gui) = GUI_MONITORS.iter().find(|p| in_path(p)) {
+        return Some(Command::new(gui));
+    }
+    let tui = TUI_MONITORS.iter().find(|p| in_path(p))?;
+    let (term, flag) = TERMINALS.iter().find(|(t, _)| in_path(t))?;
+    let mut cmd = Command::new(term);
+    cmd.args(*flag).arg(tui);
+    Some(cmd)
+}
+
+/// Runs on its own thread: start the monitor and reap it when it exits.
+fn launch_system_monitor(custom: &str) {
+    let Some(mut cmd) = system_monitor_command(custom) else {
+        tracing::warn!("Middle-click: no system monitor found");
+        return;
+    };
+    match cmd.spawn() {
+        Ok(mut child) => {
+            let _ = child.wait();
+        }
+        Err(e) => tracing::warn!("Middle-click: failed to start system monitor: {e}"),
     }
 }
 

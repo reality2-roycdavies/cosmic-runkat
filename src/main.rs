@@ -17,6 +17,7 @@ mod config;
 mod constants;
 mod cpu;
 mod error;
+mod gpu;
 mod settings;
 mod settings_cli;
 mod settings_page;
