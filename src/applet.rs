@@ -7,7 +7,7 @@
 //! ## How it works
 //!
 //! 1. **Animation**: Runner sprites (cat, horse, parrot, from RunCat365) are
-//!    embedded in the binary at compile time.  A timer ticks about 30 times
+//!    embedded in the binary at compile time.  A timer ticks up to 40 times
 //!    per second to advance the animation frame.  The animation speed (FPS)
 //!    is scaled by the chosen metric (CPU usage, frequency, temperature,
 //!    memory or GPU).  While asleep, little z's float up from the runner.

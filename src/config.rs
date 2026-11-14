@@ -81,6 +81,20 @@ impl Runner {
     }
 }
 
+/// How the metric is turned into animation speed.  Set in config.json only
+/// (`"speed_curve": "runcat"` or `"linear"`); not shown in the settings UI.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "kebab-case")]
+pub enum SpeedCurve {
+    /// RunCat365's curve: a slow 2 FPS trot until 5% load, then speed grows
+    /// with load up to a 40 FPS sprint at 100%.
+    #[default]
+    #[serde(rename = "runcat")]
+    RunCat,
+    /// Straight line from `min_fps` at 0% to `max_fps` at 100%.
+    Linear,
+}
+
 /// User-configurable application settings.
 ///
 /// Serialized to/from JSON on disk.  The `#[serde(default = "...")]`
@@ -109,10 +123,10 @@ pub struct Config {
     #[serde(default = "default_gpu_threshold")]
     pub sleep_threshold_gpu: f32,
 
-    /// Fastest the animation can run (frames per second)
+    /// Fastest the animation can run (frames per second), linear curve only
     pub max_fps: f32,
 
-    /// Slowest the animation can run (frames per second)
+    /// Slowest the animation can run (frames per second), linear curve only
     pub min_fps: f32,
 
     /// Whether to show "42%" next to the cat in CPU usage mode
@@ -125,6 +139,10 @@ pub struct Config {
     /// Which animal runs in the panel
     #[serde(default)]
     pub runner: Runner,
+
+    /// How the metric maps to animation speed
+    #[serde(default)]
+    pub speed_curve: SpeedCurve,
 }
 
 // Default value functions for serde — called when a field is missing from
@@ -148,6 +166,7 @@ impl Default for Config {
             show_percentage: true,
             animation_source: AnimationSource::default(),
             runner: Runner::default(),
+            speed_curve: SpeedCurve::default(),
         }
     }
 }
@@ -295,11 +314,19 @@ impl Config {
 
     /// Calculate how fast the runner should animate based on a 0-100% metric.
     ///
-    /// Uses linear interpolation: at 0% -> `min_fps`, at 100% -> `max_fps`.
+    /// - `RunCat`: RunCat365's formula, `2 * max(1, load / 5)` FPS, which is
+    ///   2 FPS up to 5% load and 40 FPS at 100%.
+    /// - `Linear`: at 0% -> `min_fps`, at 100% -> `max_fps`.
+    ///
     /// Values outside 0-100 are clamped.
     pub fn calculate_fps(&self, percent: f32) -> f32 {
-        let normalized = (percent / 100.0).clamp(0.0, 1.0);
-        self.min_fps + normalized * (self.max_fps - self.min_fps)
+        let percent = percent.clamp(0.0, 100.0);
+        match self.speed_curve {
+            SpeedCurve::RunCat => 2.0 * (percent / 5.0).max(1.0),
+            SpeedCurve::Linear => {
+                self.min_fps + percent / 100.0 * (self.max_fps - self.min_fps)
+            }
+        }
     }
 }
 
@@ -352,7 +379,8 @@ mod tests {
 
     #[test]
     fn test_fps_calculation() {
-        let config = Config::default();
+        let mut config = Config::default();
+        config.speed_curve = SpeedCurve::Linear;
 
         // At very low CPU, fps should be close to min_fps
         let low_fps = config.calculate_fps(3.0);
@@ -364,11 +392,23 @@ mod tests {
     }
 
     #[test]
+    fn test_runcat_fps_curve() {
+        let config = Config::default();
+        assert_eq!(config.speed_curve, SpeedCurve::RunCat);
+        assert!((config.calculate_fps(0.0) - 2.0).abs() < 0.01);
+        assert!((config.calculate_fps(5.0) - 2.0).abs() < 0.01);
+        assert!((config.calculate_fps(50.0) - 20.0).abs() < 0.01);
+        assert!((config.calculate_fps(100.0) - 40.0).abs() < 0.01);
+        assert!((config.calculate_fps(250.0) - 40.0).abs() < 0.01);
+    }
+
+    #[test]
     fn test_old_config_gets_new_defaults() {
         let old = r#"{"sleep_threshold_cpu": 10.0, "max_fps": 15.0, "min_fps": 2.0,
                       "show_percentage": false, "animation_source": "cpu-usage"}"#;
         let config: Config = serde_json::from_str(old).unwrap();
         assert_eq!(config.runner, Runner::Cat);
+        assert_eq!(config.speed_curve, SpeedCurve::RunCat);
         assert!(config.validate().is_ok());
     }
 
@@ -377,9 +417,11 @@ mod tests {
         let mut config = Config::default();
         config.runner = Runner::Parrot;
         config.animation_source = AnimationSource::Gpu;
+        config.speed_curve = SpeedCurve::Linear;
         let json = serde_json::to_string(&config).unwrap();
         assert!(json.contains(r#""runner":"parrot""#));
         assert!(json.contains(r#""animation_source":"gpu""#));
+        assert!(json.contains(r#""speed_curve":"linear""#));
         let back: Config = serde_json::from_str(&json).unwrap();
         assert_eq!(back.runner, Runner::Parrot);
         assert_eq!(back.animation_source, AnimationSource::Gpu);

@@ -15,8 +15,9 @@ pub const CAT_SIZE: u32 = 32;
 pub const CAT_CROP_TOP: u32 = 4;
 pub const CAT_CROP_HEIGHT: u32 = 24;
 
-/// Animation tick while running (~30 Hz)
-pub const RUN_TICK: Duration = Duration::from_millis(33);
+/// Animation tick while running.  40 Hz so the RunCat curve can reach its
+/// 40 FPS top speed.
+pub const RUN_TICK: Duration = Duration::from_millis(25);
 
 /// Animation tick while sleeping (only the floating z's move)
 pub const SLEEP_TICK: Duration = Duration::from_millis(66);
@@ -46,7 +47,7 @@ pub const CPU_SAMPLE_INTERVAL: Duration = Duration::from_millis(500);
 pub const MIN_FPS: f32 = 1.0;
 
 /// Maximum allowed animation FPS
-pub const MAX_FPS: f32 = 30.0;
+pub const MAX_FPS: f32 = 40.0;
 
 // === Popup Sizing Constants ===
 
